@@ -1,0 +1,21 @@
+Return-Path: <alice@example.com>
+Received: from mx.example.org (mx.example.org [209.85.220.41])
+	by mail.recipient.net (Postfix) with ESMTPS id 4A1B2C3D
+	for <bob@recipient.net>; Tue, 22 Sep 2026 10:00:05 +0000
+Received: from [192.168.1.15] (client.example.com [81.2.69.160])
+	by mx.example.org (Postfix) with ESMTPSA id 99AA88BB;
+	Tue, 22 Sep 2026 10:00:02 +0000
+Authentication-Results: mail.recipient.net;
+	spf=pass smtp.mailfrom=example.com;
+	dkim=pass (2048-bit key) header.d=example.com header.s=sel1;
+	dmarc=pass (p=reject) header.from=example.com
+From: Alice Smith <alice@example.com>
+To: Bob <bob@recipient.net>
+Subject: Quarterly report
+Date: Tue, 22 Sep 2026 10:00:00 +0000
+Message-ID: <20260922100000.12345@mail.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+User-Agent: Thunderbird/128.0
+
+Hi Bob, report attached next week.

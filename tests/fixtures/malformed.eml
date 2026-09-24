@@ -1,0 +1,7 @@
+From: =?utf-8?b?ImJvc3NAYmFuay5jb20iIDw+?= <x@evil.test>
+Received: garbage without date
+Date: not a date
+Subject: =?bad-charset?q?hello?=
+Content-Type: multipart/mixed
+
+body

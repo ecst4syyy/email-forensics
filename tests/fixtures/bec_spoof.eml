@@ -1,0 +1,23 @@
+Return-Path: <bounce@mailer-xyz.top>
+Received: from mailer-xyz.top (unknown [45.33.12.9])
+	by mail.recipient.net (Postfix) with ESMTP id 77EE66FF
+	for <finance@recipient.net>; Tue, 22 Sep 2026 09:00:00 +0000
+Received: from localhost (localhost [127.0.0.1])
+	by mailer-xyz.top with SMTP id abc123;
+	Tue, 22 Sep 2026 11:30:00 +0000
+Authentication-Results: mail.recipient.net;
+	spf=fail smtp.mailfrom=mailer-xyz.top;
+	dkim=none;
+	dmarc=fail (p=reject) header.from=company.com
+From: "ceo@company.com" <ceo.company@gmail.com>
+Reply-To: payments@secure-transfer.xyz
+To: finance@recipient.net
+Subject: Urgent wire transfer
+Subject: Meeting notes
+Date: Tue, 22 Sep 2026 15:00:00 +0000
+Message-ID: <x1@mailer-xyz.top>
+X-Mailer: PHPMailer 6.8.0
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Please process the attached invoice today.
