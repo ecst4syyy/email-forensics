@@ -25,6 +25,10 @@ def main(argv: list[str] | None = None) -> int:
                          help="hide findings below this severity")
 
     args = parser.parse_args(argv)
+    # Evidence may contain undecodable characters; never let printing them crash the run.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     min_rank = Severity(args.min_severity).rank
     exit_code = 0
     outputs = []

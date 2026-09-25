@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from email.message import EmailMessage
 
+from .domains import domain_of, org_domain
 from .headers import parse_addresses, raw_headers
+from .mime import is_text_charset
 from .models import Finding, HeaderAnalysis, Severity
+from .textcheck import invisible_char_findings
 
 # RFC 5322 §3.6: these headers must appear at most once. Duplicates are a known
 # trick to show one value to the user and another to filters.
 SINGLETON_HEADERS = ("From", "Sender", "Reply-To", "To", "Cc", "Subject", "Date", "Message-ID")
-
-# Rough second-level suffixes so "mail.example.co.uk" and "example.co.uk" compare equal.
-# A full Public Suffix List lookup is planned for a later day.
-_SECOND_LEVEL = {"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or"}
 
 CLOCK_TOLERANCE_SECONDS = 5 * 60
 LONG_DELAY_SECONDS = 60 * 60
@@ -30,23 +31,10 @@ _AUTH_SEVERITY = {
     "policy": Severity.LOW,
 }
 
+_ENCODED_WORD_RE = re.compile(r"=\?([^?\s]+)\?([bBqQ])\?([^?\s]*)\?=")
+ENCODED_HEADERS = ("Subject", "From", "To", "Cc", "Reply-To", "Sender")
+
 _EMBEDDED_ADDR_RE = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
-
-
-def domain_of(address: str | None) -> str | None:
-    if not address or "@" not in address:
-        return None
-    return address.rsplit("@", 1)[1].strip().strip(">").rstrip(".").lower() or None
-
-
-def org_domain(domain: str | None) -> str | None:
-    """Approximate organizational domain (without a Public Suffix List)."""
-    if not domain:
-        return None
-    labels = domain.lower().rstrip(".").split(".")
-    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL:
-        return ".".join(labels[-3:])
-    return ".".join(labels[-2:])
 
 
 def _same_org(a: str | None, b: str | None) -> bool:
@@ -60,6 +48,7 @@ def run_header_rules(msg: EmailMessage, h: HeaderAnalysis) -> list[Finding]:
     findings += _check_authentication(h)
     findings += _check_timeline(h)
     findings += _check_origin(h)
+    findings += _check_encoding(msg, h)
     return findings
 
 
@@ -246,6 +235,35 @@ def _check_origin(h: HeaderAnalysis) -> list[Finding]:
                            "X-Originating-IP header present (client IP reported by webmail).",
                            {"value": h.x_originating_ip}))
     return out
+
+
+def _check_encoding(msg: EmailMessage, h: HeaderAnalysis) -> list[Finding]:
+    out = []
+    for name in ENCODED_HEADERS:
+        for value in raw_headers(msg, name, decode=False):
+            for m in _ENCODED_WORD_RE.finditer(value):
+                problem = _encoded_word_problem(*m.groups())
+                if problem:
+                    out.append(Finding(
+                        "HDR_ENCODED_WORD_ERROR", Severity.LOW,
+                        f"{name} header has a malformed RFC 2047 encoded-word ({problem}).",
+                        {"header": name, "encoded_word": m.group(0)[:200]},
+                    ))
+    out += invisible_char_findings("Subject", h.subject, prominent=True)
+    out += invisible_char_findings("From display name", h.from_display_name, prominent=True)
+    return out
+
+
+def _encoded_word_problem(charset: str, encoding: str, data: str) -> str | None:
+    charset = charset.split("*", 1)[0]  # RFC 2231 language suffix, e.g. utf-8*en
+    if not is_text_charset(charset):
+        return "unknown charset"
+    if encoding.lower() == "b":
+        try:
+            base64.b64decode(data + "=" * (-len(data) % 4), validate=True)
+        except (binascii.Error, ValueError):
+            return "invalid base64"
+    return None
 
 
 def embedded_addresses(display_name: str | None) -> list[str]:

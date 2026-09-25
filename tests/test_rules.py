@@ -1,7 +1,8 @@
 from email_forensics.analyzer import analyze_file
 from email_forensics.headers import analyze_headers
 from email_forensics.loader import parse_bytes
-from email_forensics.rules import org_domain, run_header_rules
+from email_forensics.domains import org_domain
+from email_forensics.rules import run_header_rules
 
 
 def codes(findings):

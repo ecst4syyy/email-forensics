@@ -6,6 +6,8 @@ import json
 
 from .models import Report
 
+MAX_TEXT_URLS = 50
+
 
 def to_json(report: Report) -> str:
     return json.dumps(report.to_dict(), indent=2, ensure_ascii=False)
@@ -48,6 +50,29 @@ def to_text(report: Report) -> str:
     for r in h.auth_results:
         props = " ".join(f"{k}={v}" for k, v in r.properties.items())
         lines.append(f"{r.method:<6} {r.result:<9} {props}  [{r.authserv_id}]")
+
+    b = report.body
+    lines += ["", "=== MIME structure ==="]
+    for part in b.parts:
+        extra = []
+        if part.charset:
+            extra.append(part.charset)
+        if part.transfer_encoding:
+            extra.append(part.transfer_encoding)
+        if part.filename:
+            extra.append(f"filename={part.filename!r}")
+        if part.is_attachment:
+            extra.append("ATTACHMENT")
+        size = f" {part.size}B" if part.sha256 else ""
+        lines.append(f"{'  ' * part.depth}{part.path:<6} {part.content_type}{size}"
+                     f"{'  [' + ', '.join(extra) + ']' if extra else ''}")
+
+    lines += ["", f"=== URLs ({len(b.urls)}) ==="]
+    for url in b.urls[:MAX_TEXT_URLS]:
+        text = f'  text="{url.anchor_texts[0][:60]}"' if url.anchor_texts else ""
+        lines.append(f"- {url.url[:150]}  ({', '.join(url.sources)}){text}")
+    if len(b.urls) > MAX_TEXT_URLS:
+        lines.append(f"... {len(b.urls) - MAX_TEXT_URLS} more (use --json for all)")
 
     lines += ["", f"=== Findings ({len(report.findings)}) ==="]
     for f in report.findings:

