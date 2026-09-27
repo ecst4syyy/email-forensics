@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 
 from .models import Report
+from .textcheck import safe_display
 
 MAX_TEXT_URLS = 50
+MAX_TEXT_MEMBERS = 20
 
 
 def to_json(report: Report) -> str:
@@ -24,8 +26,8 @@ def to_text(report: Report) -> str:
         f"Analyzed:  {e.analyzed_at.isoformat()} (tool v{e.tool_version})",
         "",
         "=== Summary ===",
-        f"Subject:     {h.subject or '-'}",
-        f"From:        {h.from_display_name + ' ' if h.from_display_name else ''}<{h.from_address}>",
+        f"Subject:     {safe_display(h.subject) or '-'}",
+        f"From:        {safe_display(h.from_display_name) + ' ' if h.from_display_name else ''}<{h.from_address}>",
         f"Return-Path: {h.return_path or '-'}",
         f"Reply-To:    {', '.join(h.reply_to) or '-'}",
         f"To:          {', '.join(h.to) or '-'}",
@@ -70,11 +72,32 @@ def to_text(report: Report) -> str:
     lines += ["", f"=== URLs ({len(b.urls)}) ==="]
     for url in b.urls[:MAX_TEXT_URLS]:
         text = f'  text="{url.anchor_texts[0][:60]}"' if url.anchor_texts else ""
-        lines.append(f"- {url.url[:150]}  ({', '.join(url.sources)}){text}")
+        lines.append(f"- {safe_display(url.url[:150])}  ({', '.join(url.sources)}){text}")
     if len(b.urls) > MAX_TEXT_URLS:
         lines.append(f"... {len(b.urls) - MAX_TEXT_URLS} more (use --json for all)")
 
+    lines += ["", f"=== Attachments ({len(report.attachments)}) ==="]
+    for att in report.attachments:
+        name = safe_display(att.filename) if att.filename else "(no filename)"
+        detected = att.detected_description or "unknown type"
+        lines.append(f"- {att.part} '{name}' {att.size}B {att.content_type} -> {detected}"
+                     f"{' [inline]' if att.inline else ''}")
+        lines.append(f"    sha256={att.sha256} md5={att.md5}")
+        if att.archive:
+            a = att.archive
+            lines.append(f"    archive: {len(a.members)} member(s), {a.total_uncompressed:,} bytes uncompressed"
+                         f"{', ' + str(a.encrypted_members) + ' encrypted' if a.encrypted_members else ''}"
+                         f"{', error: ' + a.error if a.error else ''}")
+            for m in a.members[:MAX_TEXT_MEMBERS]:
+                path = f"{m.container}/{m.name}" if m.container else m.name
+                lines.append(f"      {safe_display(path)} ({m.size:,}B{', ' + m.detected_type if m.detected_type else ''}"
+                             f"{', encrypted' if m.encrypted else ''})")
+            if len(a.members) > MAX_TEXT_MEMBERS:
+                lines.append(f"      ... {len(a.members) - MAX_TEXT_MEMBERS} more")
+        if att.extracted_to:
+            lines.append(f"    extracted: {att.extracted_to}")
+
     lines += ["", f"=== Findings ({len(report.findings)}) ==="]
     for f in report.findings:
-        lines.append(f"[{f.severity.value.upper():<6}] {f.code}: {f.message}")
+        lines.append(f"[{f.severity.value.upper():<6}] {f.code}: {safe_display(f.message)}")
     return "\n".join(lines)

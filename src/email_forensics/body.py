@@ -5,9 +5,9 @@ from __future__ import annotations
 from email.message import Message
 
 from .domains import org_domain
-from .html_analysis import analyze_html
-from .mime import decode_text, walk_mime
-from .models import BodyAnalysis, Finding, HtmlAnalysis, Link, Severity, TextBody
+from .html_analysis import analyze_html, html_findings
+from .mime import MimeTree, decode_text, walk_mime
+from .models import BodyAnalysis, Finding, Link, Severity, TextBody
 from .textcheck import invisible_char_findings
 from .urls import collect_urls, extract_text_urls, link_text_host, split_url, url_findings
 
@@ -15,8 +15,8 @@ TEXT_PREVIEW_CHARS = 4000
 MAX_EXAMPLES = 10
 
 
-def analyze_body(msg: Message) -> tuple[BodyAnalysis, list[Finding]]:
-    tree = walk_mime(msg)
+def analyze_body(msg: Message, tree: MimeTree | None = None) -> tuple[BodyAnalysis, list[Finding]]:
+    tree = tree or walk_mime(msg)
     body = BodyAnalysis(parts=tree.parts)
     findings = list(tree.findings)
     links: list[Link] = []
@@ -38,7 +38,7 @@ def analyze_body(msg: Message) -> tuple[BodyAnalysis, list[Finding]]:
             anchor_texts = {l.text for l in html.links if l.source == "a" and l.text}
             links += [l for l in extract_text_urls(visible, info.path) if l.url not in anchor_texts]
             text = visible
-            findings += _html_findings(html)
+            findings += html_findings(html)
         else:
             links += extract_text_urls(text, info.path)
 
@@ -54,61 +54,6 @@ def analyze_body(msg: Message) -> tuple[BodyAnalysis, list[Finding]]:
     findings += _link_text_findings(links)
     findings += _structure_findings(body)
     return body, findings
-
-
-def _html_findings(h: HtmlAnalysis) -> list[Finding]:
-    out = []
-    part = {"part": h.part}
-    if h.scripts:
-        out.append(Finding("HTML_SCRIPT", Severity.MEDIUM,
-                           f"HTML part {h.part} contains {h.scripts} <script> element(s); mail clients "
-                           "block them, so their presence suggests a phishing page or HTML attachment lure.",
-                           {**part, "count": h.scripts}))
-    if h.event_handlers:
-        out.append(Finding("HTML_EVENT_HANDLERS", Severity.MEDIUM,
-                           f"HTML part {h.part} uses JavaScript event handler attributes.",
-                           {**part, "handlers": sorted(set(h.event_handlers))[:MAX_EXAMPLES]}))
-    for form in h.forms:
-        if "password" in form.input_types:
-            out.append(Finding("HTML_CREDENTIAL_FORM", Severity.HIGH,
-                               f"HTML part {h.part} contains a form with a password field.",
-                               {**part, "action": form.action, "inputs": form.input_types}))
-        elif form.input_types or form.action:
-            out.append(Finding("HTML_FORM", Severity.MEDIUM,
-                               f"HTML part {h.part} contains a form that submits data"
-                               f"{' to ' + form.action if form.action else ''}.",
-                               {**part, "action": form.action, "inputs": form.input_types}))
-    if h.embedded_frames:
-        out.append(Finding("HTML_EMBEDDED_FRAME", Severity.MEDIUM,
-                           f"HTML part {h.part} embeds frames/objects.",
-                           {**part, "sources": h.embedded_frames[:MAX_EXAMPLES]}))
-    if h.meta_refresh:
-        out.append(Finding("HTML_META_REFRESH", Severity.MEDIUM,
-                           f"HTML part {h.part} auto-redirects via meta refresh to {h.meta_refresh}.",
-                           {**part, "url": h.meta_refresh}))
-    if h.base_href:
-        out.append(Finding("HTML_BASE_HREF", Severity.LOW,
-                           "HTML sets <base href>, which changes where relative links point "
-                           "and can hide the real destination from scanners.",
-                           {**part, "base_href": h.base_href}))
-    if h.hidden_text:
-        words = sum(len(t.split()) for t in h.hidden_text)
-        out.append(Finding("HTML_HIDDEN_TEXT", Severity.MEDIUM if words >= 20 else Severity.LOW,
-                           f"HTML part {h.part} contains ~{words} words of CSS-hidden text "
-                           "(used to poison spam filters or smuggle content).",
-                           {**part, "snippets": h.hidden_text[:MAX_EXAMPLES]}))
-    if h.tracking_pixels:
-        out.append(Finding("HTML_TRACKING_PIXEL", Severity.INFO,
-                           f"HTML part {h.part} contains {len(h.tracking_pixels)} tracking pixel(s).",
-                           {**part, "sources": h.tracking_pixels[:MAX_EXAMPLES]}))
-    if h.remote_resources:
-        out.append(Finding("HTML_REMOTE_RESOURCES", Severity.INFO,
-                           f"HTML part {h.part} loads {h.remote_resources} remote resource(s) when rendered.",
-                           {**part, "count": h.remote_resources}))
-    if h.truncated:
-        out.append(Finding("HTML_TRUNCATED", Severity.LOW,
-                           f"HTML part {h.part} was too large or malformed to analyze fully.", part))
-    return out
 
 
 def _link_text_findings(links: list[Link]) -> list[Finding]:

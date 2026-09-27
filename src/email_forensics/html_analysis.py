@@ -10,11 +10,12 @@ from __future__ import annotations
 import re
 from html.parser import HTMLParser
 
-from .models import HtmlAnalysis, HtmlForm, Link
+from .models import Finding, HtmlAnalysis, HtmlForm, Link, Severity
 from .urls import extract_text_urls
 
 MAX_HTML_CHARS = 5_000_000
 MAX_SNIPPETS = 50
+MAX_EXAMPLES = 10
 SNIPPET_CHARS = 200
 VISIBLE_TEXT_CHARS = 4000
 
@@ -206,3 +207,58 @@ def analyze_html(html: str, part: str) -> tuple[HtmlAnalysis, str]:
     result = parser.finish()
     result.truncated = truncated
     return result, parser.full_text
+
+
+def html_findings(h: HtmlAnalysis) -> list[Finding]:
+    out = []
+    part = {"part": h.part}
+    if h.scripts:
+        out.append(Finding("HTML_SCRIPT", Severity.MEDIUM,
+                           f"HTML part {h.part} contains {h.scripts} <script> element(s); mail clients "
+                           "block them, so their presence suggests a phishing page or HTML attachment lure.",
+                           {**part, "count": h.scripts}))
+    if h.event_handlers:
+        out.append(Finding("HTML_EVENT_HANDLERS", Severity.MEDIUM,
+                           f"HTML part {h.part} uses JavaScript event handler attributes.",
+                           {**part, "handlers": sorted(set(h.event_handlers))[:MAX_EXAMPLES]}))
+    for form in h.forms:
+        if "password" in form.input_types:
+            out.append(Finding("HTML_CREDENTIAL_FORM", Severity.HIGH,
+                               f"HTML part {h.part} contains a form with a password field.",
+                               {**part, "action": form.action, "inputs": form.input_types}))
+        elif form.input_types or form.action:
+            out.append(Finding("HTML_FORM", Severity.MEDIUM,
+                               f"HTML part {h.part} contains a form that submits data"
+                               f"{' to ' + form.action if form.action else ''}.",
+                               {**part, "action": form.action, "inputs": form.input_types}))
+    if h.embedded_frames:
+        out.append(Finding("HTML_EMBEDDED_FRAME", Severity.MEDIUM,
+                           f"HTML part {h.part} embeds frames/objects.",
+                           {**part, "sources": h.embedded_frames[:MAX_EXAMPLES]}))
+    if h.meta_refresh:
+        out.append(Finding("HTML_META_REFRESH", Severity.MEDIUM,
+                           f"HTML part {h.part} auto-redirects via meta refresh to {h.meta_refresh}.",
+                           {**part, "url": h.meta_refresh}))
+    if h.base_href:
+        out.append(Finding("HTML_BASE_HREF", Severity.LOW,
+                           "HTML sets <base href>, which changes where relative links point "
+                           "and can hide the real destination from scanners.",
+                           {**part, "base_href": h.base_href}))
+    if h.hidden_text:
+        words = sum(len(t.split()) for t in h.hidden_text)
+        out.append(Finding("HTML_HIDDEN_TEXT", Severity.MEDIUM if words >= 20 else Severity.LOW,
+                           f"HTML part {h.part} contains ~{words} words of CSS-hidden text "
+                           "(used to poison spam filters or smuggle content).",
+                           {**part, "snippets": h.hidden_text[:MAX_EXAMPLES]}))
+    if h.tracking_pixels:
+        out.append(Finding("HTML_TRACKING_PIXEL", Severity.INFO,
+                           f"HTML part {h.part} contains {len(h.tracking_pixels)} tracking pixel(s).",
+                           {**part, "sources": h.tracking_pixels[:MAX_EXAMPLES]}))
+    if h.remote_resources:
+        out.append(Finding("HTML_REMOTE_RESOURCES", Severity.INFO,
+                           f"HTML part {h.part} loads {h.remote_resources} remote resource(s) when rendered.",
+                           {**part, "count": h.remote_resources}))
+    if h.truncated:
+        out.append(Finding("HTML_TRUNCATED", Severity.LOW,
+                           f"HTML part {h.part} was too large or malformed to analyze fully.", part))
+    return out

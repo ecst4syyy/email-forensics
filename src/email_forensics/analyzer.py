@@ -4,18 +4,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .attachments import analyze_attachments, correlate_with_body, extract_attachments
 from .body import analyze_body
 from .headers import analyze_headers
 from .loader import load_eml
+from .mime import walk_mime
 from .models import Report
 from .rules import run_header_rules
 
 
-def analyze_file(path: str | Path) -> Report:
+def analyze_file(path: str | Path, extract_dir: str | Path | None = None) -> Report:
     evidence, msg = load_eml(path)
     headers = analyze_headers(msg)
     findings = run_header_rules(msg, headers)
-    body, body_findings = analyze_body(msg)
-    findings += body_findings
+    tree = walk_mime(msg)
+    body, body_findings = analyze_body(msg, tree)
+    attachments, attachment_findings = analyze_attachments(tree)
+    correlate_with_body(attachment_findings, [tb.preview for tb in body.text_bodies])
+    if extract_dir is not None and attachments:
+        extract_attachments(tree, attachments, extract_dir, evidence.sha256)
+    findings += body_findings + attachment_findings
     findings.sort(key=lambda f: (-f.severity.rank, f.code))
-    return Report(evidence=evidence, headers=headers, body=body, findings=findings)
+    return Report(evidence=evidence, headers=headers, body=body, attachments=attachments, findings=findings)

@@ -23,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--json", action="store_true", help="output JSON instead of text")
     analyze.add_argument("--min-severity", choices=[s.value for s in Severity], default="info",
                          help="hide findings below this severity")
+    analyze.add_argument("--extract-dir", metavar="DIR",
+                         help="write attachments to DIR as read-only <sha256>.bin files with a manifest.json")
 
     args = parser.parse_args(argv)
     # Evidence may contain undecodable characters; never let printing them crash the run.
@@ -34,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     outputs = []
     for path in args.files:
         try:
-            report = analyze_file(path)
+            report = analyze_file(path, extract_dir=args.extract_dir)
         except EvidenceError as exc:
             print(f"error: {path}: {exc}", file=sys.stderr)
             exit_code = 2

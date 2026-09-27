@@ -2,7 +2,18 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 2 (MIME structure & body analysis)
+## Status: Day 3 (static attachment analysis)
+
+**Day 3**
+- Every attachment (and inline non-text part) gets MD5 / SHA-1 / SHA-256 and a **true file type from its bytes**: PE/ELF/Mach-O, PDF, RTF, OLE, OOXML (Word/Excel/PowerPoint), ODF, JAR/APK, ZIP/RAR/7z/gzip/bzip2/xz/tar/CAB/ACE, ISO/VHD/VHDX, LNK, OneNote, CHM, HTML, SVG, images, scripts
+- Detected type is compared with the extension and the declared Content-Type
+- Filename tricks: double extensions (`invoice.pdf.exe`), whitespace padding, RTLO/zero-width characters, path characters, and Content-Type `name` vs Content-Disposition `filename` conflicts. RFC 2231 names are decoded
+- Risky formats: executables, disk images (Mark-of-the-Web bypass), OneNote, macro-enabled Office, VBA projects in OLE/OOXML, remote template injection, RTF embedded objects
+- HTML/SVG attachments are run through the Day 2 HTML analyzer, plus **HTML smuggling** detection (`atob`/`Blob`/`createObjectURL` with large base64 blobs)
+- Archives are listed **without writing to disk**: ZIP/JAR/APK, tar, gzip/bzip2/xz, nested up to 3 levels, member hashes and types. Flags password protection, path traversal, risky members and zip bombs (ratio, total size, overlapping entries). Hard limits on members, bytes read and nesting
+- Password-protected archive + "password" in the body (multi-language) → escalated to high
+- `--extract-dir DIR` writes attachments as read-only `<sha256>.bin` files with a `manifest.json` (original names never touch the filesystem)
+- Attacker-controlled text (filenames, subject, URLs) is escaped in text output so RTLO and control characters can't alter the display
 
 **Day 2**
 - MIME tree walker with IMAP-style part paths (`1.2.1`), per-part SHA-256, size, charset, encoding and filename. Depth (20) and part-count (1000) limits
@@ -28,6 +39,7 @@ A tool for forensic analysis of email: headers, bodies and attachments. We build
 pip install -e ".[dev]"
 email-forensics analyze suspicious.eml
 email-forensics analyze --json --min-severity medium *.eml
+email-forensics analyze suspicious.eml --extract-dir ./case42/attachments
 # or without installing:
 PYTHONPATH=src python -m email_forensics analyze tests/fixtures/bec_spoof.eml
 ```
@@ -39,6 +51,16 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 | Code | Severity | Meaning |
 |---|---|---|
 | `HDR_DISPLAY_NAME_SPOOF` | high | Display name contains an address from a different domain than the real sender |
+| `ATT_EXECUTABLE` | high | Executable by extension or by content |
+| `ATT_TYPE_MISMATCH` | high (executable/disk/HTML content) / medium | Content doesn't match the extension |
+| `ATT_DOUBLE_EXTENSION` | high | `invoice.pdf.exe` style name |
+| `ATT_DISK_IMAGE`, `ATT_ONENOTE` | high | ISO/IMG/VHD(X), OneNote |
+| `ATT_OFFICE_MACRO`, `ATT_REMOTE_TEMPLATE`, `ATT_RTF_OBJECT` | high | VBA project, external template, RTF OLE objects |
+| `ATT_HTML_SMUGGLING` | high | HTML attachment that assembles a file in the browser |
+| `ATT_ARCHIVE_RISKY_MEMBER`, `ATT_ZIP_BOMB` | high | Risky file inside an archive; decompression bomb |
+| `ATT_ENCRYPTED_ARCHIVE` | medium (high if body mentions a password) | Password-protected archive members |
+| `ATT_HTML`, `ATT_MACRO_EXTENSION`, `ATT_DECLARED_TYPE_MISMATCH`, `ATT_FILENAME_CONFLICT`, `ATT_FILENAME_PADDING`, `ATT_FILENAME_PATH`, `ATT_ARCHIVE_PATH_TRAVERSAL` | medium | Attachment traits worth a look |
+| `ATT_ARCHIVE_NESTED`, `ATT_ARCHIVE_UNINSPECTED`, `ATT_ARCHIVE_CORRUPT`, `ATT_ARCHIVE_TRUNCATED` | low | Archive could not be fully inspected |
 | `URL_TEXT_MISMATCH` | high | Link text shows one domain but the link goes to another |
 | `URL_USERINFO` | high | `http://trusted.com@evil.com/` style URL |
 | `URL_DANGEROUS_SCHEME` | high | `javascript:`, `vbscript:`, `data:` or `file:` link |
@@ -73,7 +95,8 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 - Authentication verdicts are read from headers, not re-verified. DKIM/SPF re-verification is planned for Day 5.
 - There is no trust boundary configuration yet. `Received` hops below your own MX can be forged by the sender.
 - Only `.eml` files are supported so far. `.msg` and `.mbox` support is planned for Day 7.
-- Attachments are listed in the MIME tree (with hashes) but not yet inspected. Attachment analysis is planned for Day 3.
+- RAR / 7z / CAB / ISO contents are not listed (flagged as uninspected). Optional extras could add them later.
+- Office/PDF analysis is presence-based (VBA project exists, RTF has objects). Macro source extraction and PDF JavaScript/OpenAction analysis are planned for Day 6.
 - Lookalike detection is limited to flagging punycode hosts. Homoglyph and edit-distance checks are planned for Day 4.
 - Hidden-text detection covers inline styles and the `hidden` attribute, not `<style>` class rules.
 
@@ -81,7 +104,10 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 
 ```bash
 python -m pytest
+python tests/fixtures/build_attachments_fixture.py   # regenerate the (inert) attachment fixture
 ```
+
+Test samples in `tests/samples.py` only imitate the structure of malicious files (headers, archive layout, markers). They contain no working code.
 
 Layout of `src/email_forensics/`:
 
@@ -91,6 +117,7 @@ Layout of `src/email_forensics/`:
 | `headers` → `rules` | Header extraction → header findings |
 | `mime` | MIME tree walk, safe decoding |
 | `html_analysis`, `urls`, `textcheck` | HTML, URL and Unicode analysis |
+| `filetype`, `archives`, `attachments` | Magic-byte detection, bounded archive listing, attachment findings and extraction |
 | `body` | Body orchestration and body findings |
 | `domains` | Shared domain helpers |
 | `analyzer` | Runs everything and builds the `Report` |

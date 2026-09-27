@@ -171,10 +171,55 @@ class BodyAnalysis:
 
 
 @dataclass
+class ArchiveMember:
+    """A file inside an archive. ``container`` is the path of nested archives, if any."""
+
+    name: str
+    size: int
+    compressed_size: int | None = None
+    encrypted: bool = False
+    is_dir: bool = False
+    container: str | None = None
+    detected_type: str | None = None
+    sha256: str | None = None
+
+
+@dataclass
+class ArchiveInfo:
+    format: str
+    members: list[ArchiveMember] = field(default_factory=list)
+    total_uncompressed: int = 0
+    encrypted_members: int = 0
+    max_nesting: int = 0
+    overlapping_entries: bool = False
+    truncated: bool = False
+    error: str | None = None
+
+
+@dataclass
+class Attachment:
+    part: str
+    filename: str | None
+    content_type: str
+    inline: bool
+    size: int
+    md5: str
+    sha1: str
+    sha256: str
+    extension: str | None = None
+    detected_type: str | None = None
+    detected_description: str | None = None
+    archive: ArchiveInfo | None = None
+    urls: list[UrlInfo] = field(default_factory=list)
+    extracted_to: str | None = None
+
+
+@dataclass
 class Report:
     evidence: EvidenceInfo
     headers: HeaderAnalysis
     body: BodyAnalysis = field(default_factory=BodyAnalysis)
+    attachments: list[Attachment] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
