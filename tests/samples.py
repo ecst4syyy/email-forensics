@@ -73,7 +73,7 @@ def message_with(attachments: list[tuple[str | None, str, bytes]], body: str = "
     """attachments: (filename, content_type, data)."""
     msg = EmailMessage()
     msg["From"] = "sender@example.com"
-    msg["To"] = "victim@example.org"
+    msg["To"] = "victim@corp.test"
     msg["Subject"] = "Documents"
     msg["Date"] = "Wed, 23 Sep 2026 08:00:00 +0000"
     msg["Message-ID"] = "<att@example.com>"

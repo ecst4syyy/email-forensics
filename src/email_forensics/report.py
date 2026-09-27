@@ -53,6 +53,20 @@ def to_text(report: Report) -> str:
         props = " ".join(f"{k}={v}" for k, v in r.properties.items())
         lines.append(f"{r.method:<6} {r.result:<9} {props}  [{r.authserv_id}]")
 
+    ident = report.identity
+    lines += ["", "=== Sender identity ==="]
+    mailer = f"{safe_display(ident.mailer)}" if ident.mailer else "-"
+    if ident.mailer_name:
+        mailer += f"  -> {ident.mailer_name} [{ident.mailer_category}]"
+    lines.append(f"Mailer:            {mailer}")
+    if ident.php_script:
+        lines.append(f"PHP script:        {safe_display(ident.php_script)}")
+    lines.append(f"Recipient domains: {', '.join(ident.recipient_domains) or '-'}")
+    lines.append(f"Lookalike check:   {ident.protected_domain_count} protected domains, "
+                 f"sender addresses + {ident.checked_hosts} URL host(s)")
+    for provider, verdict in ident.provider_verdicts.items():
+        lines.append(f"{provider + ':':<19}" + " ".join(f"{k}={safe_display(v)}" for k, v in verdict.items()))
+
     b = report.body
     lines += ["", "=== MIME structure ==="]
     for part in b.parts:

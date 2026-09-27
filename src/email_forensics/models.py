@@ -215,11 +215,24 @@ class Attachment:
 
 
 @dataclass
+class IdentityAnalysis:
+    mailer: str | None = None  # raw X-Mailer / User-Agent
+    mailer_name: str | None = None
+    mailer_category: str | None = None
+    php_script: str | None = None
+    provider_verdicts: dict[str, dict[str, str]] = field(default_factory=dict)
+    recipient_domains: list[str] = field(default_factory=list)
+    protected_domain_count: int = 0
+    checked_hosts: int = 0
+
+
+@dataclass
 class Report:
     evidence: EvidenceInfo
     headers: HeaderAnalysis
     body: BodyAnalysis = field(default_factory=BodyAnalysis)
     attachments: list[Attachment] = field(default_factory=list)
+    identity: IdentityAnalysis = field(default_factory=IdentityAnalysis)
     findings: list[Finding] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

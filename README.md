@@ -2,7 +2,15 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 3 (static attachment analysis)
+## Status: Day 4 (sender identity)
+
+**Day 4**
+- **Lookalike domains** for From / Reply-To / Return-Path / Sender and every URL host (body and HTML attachments): homoglyphs (`paypa1`, `rnicrosoft`, Cyrillic `аррӏе`), typos (`microsfot`), combosquatting (`paypal-secure`, `secure-paypa1`), brand in a subdomain (`paypal.com.evil.net`), mixed-script labels, and TLD swaps of your own domain (`acme-corp.co`)
+- Compared against a built-in list of commonly impersonated brands **plus the recipient's own domain** (from To/Cc/Delivered-To) and any domains you pass with `--protected-domain` / `--protected-domains-file`. Your own domains get stricter checks than brands
+- **Display-name impersonation**: a brand name ("Microsoft Support") or your organisation's name in the display name with an unrelated or free-mail address
+- **Sending software**: phishing-kit mailers, mass mailers, scripts/libraries, obsolete clients, and `X-PHP-Originating-Script` (mail sent from a web server)
+- **Provider consistency**: From claims Gmail/Outlook.com/Yahoo/iCloud, or the Message-ID looks Google/Microsoft-generated, but no such server appears in the delivery path
+- **Provider verdicts**: Microsoft 365 (`X-Forefront-Antispam-Report` CAT/SCL/SFV, BCL, `AuthAs: Anonymous` for an internal-looking sender) and SpamAssassin
 
 **Day 3**
 - Every attachment (and inline non-text part) gets MD5 / SHA-1 / SHA-256 and a **true file type from its bytes**: PE/ELF/Mach-O, PDF, RTF, OLE, OOXML (Word/Excel/PowerPoint), ODF, JAR/APK, ZIP/RAR/7z/gzip/bzip2/xz/tar/CAB/ACE, ISO/VHD/VHDX, LNK, OneNote, CHM, HTML, SVG, images, scripts
@@ -40,6 +48,7 @@ pip install -e ".[dev]"
 email-forensics analyze suspicious.eml
 email-forensics analyze --json --min-severity medium *.eml
 email-forensics analyze suspicious.eml --extract-dir ./case42/attachments
+email-forensics analyze suspicious.eml --protected-domain acme-corp.com --protected-domains-file partners.txt
 # or without installing:
 PYTHONPATH=src python -m email_forensics analyze tests/fixtures/bec_spoof.eml
 ```
@@ -51,6 +60,17 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 | Code | Severity | Meaning |
 |---|---|---|
 | `HDR_DISPLAY_NAME_SPOOF` | high | Display name contains an address from a different domain than the real sender |
+| `LOOKALIKE_HOMOGLYPH`, `LOOKALIKE_TYPO` | high | Domain visually confusable with / one typo from a protected domain |
+| `LOOKALIKE_BRAND_IN_SUBDOMAIN` | high (full domain) / medium (name) | `paypal.com.evil.net` |
+| `LOOKALIKE_COMBO` | high (look-alike spelling) / medium | `paypal-secure.com`, `acme-corp-invoices.com` |
+| `LOOKALIKE_MIXED_SCRIPT` | high (Latin + Cyrillic/Greek/Armenian) / medium | Label mixes writing systems |
+| `LOOKALIKE_TLD_SWAP` | medium | Your domain's name on another suffix |
+| `HDR_DISPLAY_NAME_BRAND`, `HDR_DISPLAY_NAME_ORG` | high (free-mail) / medium | Brand or your organisation's name in the display name, unrelated address |
+| `HDR_MAILER_PHISHING_KIT` | high | Mailer bundled with phishing kits |
+| `PROVIDER_PHISH_VERDICT`, `PROVIDER_EXTERNAL_CLAIMS_INTERNAL` | high | Microsoft 365 phish/spoof verdict; unauthenticated external mail with an internal From |
+| `HDR_PROVIDER_PATH_MISMATCH`, `HDR_MESSAGE_ID_PROVIDER_MISMATCH`, `HDR_PHP_SCRIPT`, `PROVIDER_SPAM_VERDICT` | medium | Provider claims not backed by the path; PHP web-server sending; spam verdicts |
+| `HDR_MAILER_SCRIPT`, `HDR_MAILER_BULK`, `HDR_MAILER_OUTDATED`, `PROVIDER_BULK_VERDICT` | low | Sending-software context |
+| `PROVIDER_FILTER_BYPASSED` | info | Spam filtering skipped by allow list or mail-flow rule |
 | `ATT_EXECUTABLE` | high | Executable by extension or by content |
 | `ATT_TYPE_MISMATCH` | high (executable/disk/HTML content) / medium | Content doesn't match the extension |
 | `ATT_DOUBLE_EXTENSION` | high | `invoice.pdf.exe` style name |
@@ -97,7 +117,8 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 - Only `.eml` files are supported so far. `.msg` and `.mbox` support is planned for Day 7.
 - RAR / 7z / CAB / ISO contents are not listed (flagged as uninspected). Optional extras could add them later.
 - Office/PDF analysis is presence-based (VBA project exists, RTF has objects). Macro source extraction and PDF JavaScript/OpenAction analysis are planned for Day 6.
-- Lookalike detection is limited to flagging punycode hosts. Homoglyph and edit-distance checks are planned for Day 4.
+- Lookalike detection uses a practical subset of Unicode confusables and an approximate organisational-domain rule (no Public Suffix List yet), so multi-level suffixes beyond `co.uk`-style may be compared imperfectly.
+- Provider verdict headers are only trustworthy if your own tenant or gateway added them. The tool reports them but can't verify who added them.
 - Hidden-text detection covers inline styles and the `hidden` attribute, not `<style>` class rules.
 
 ## Development
@@ -117,6 +138,7 @@ Layout of `src/email_forensics/`:
 | `headers` → `rules` | Header extraction → header findings |
 | `mime` | MIME tree walk, safe decoding |
 | `html_analysis`, `urls`, `textcheck` | HTML, URL and Unicode analysis |
+| `brands`, `lookalike`, `mailer`, `identity` | Reference data, lookalike engine, mailer fingerprints, identity findings |
 | `filetype`, `archives`, `attachments` | Magic-byte detection, bounded archive listing, attachment findings and extraction |
 | `body` | Body orchestration and body findings |
 | `domains` | Shared domain helpers |

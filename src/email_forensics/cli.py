@@ -23,6 +23,10 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--json", action="store_true", help="output JSON instead of text")
     analyze.add_argument("--min-severity", choices=[s.value for s in Severity], default="info",
                          help="hide findings below this severity")
+    analyze.add_argument("--protected-domain", metavar="DOMAIN", action="append", default=[],
+                         help="your own or a partner domain to watch for lookalikes (repeatable)")
+    analyze.add_argument("--protected-domains-file", metavar="FILE",
+                         help="file with one protected domain per line (# comments allowed)")
     analyze.add_argument("--extract-dir", metavar="DIR",
                          help="write attachments to DIR as read-only <sha256>.bin files with a manifest.json")
 
@@ -32,11 +36,19 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="backslashreplace")
     min_rank = Severity(args.min_severity).rank
+    protected = list(args.protected_domain)
+    if args.protected_domains_file:
+        try:
+            with open(args.protected_domains_file, encoding="utf-8") as fh:
+                protected += [line.split("#", 1)[0].strip() for line in fh if line.split("#", 1)[0].strip()]
+        except OSError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     exit_code = 0
     outputs = []
     for path in args.files:
         try:
-            report = analyze_file(path, extract_dir=args.extract_dir)
+            report = analyze_file(path, extract_dir=args.extract_dir, protected_domains=protected)
         except EvidenceError as exc:
             print(f"error: {path}: {exc}", file=sys.stderr)
             exit_code = 2
