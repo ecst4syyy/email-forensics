@@ -1,0 +1,24 @@
+From: sender@example.com
+To: victim@corp.test
+Subject: Documents
+Date: Wed, 23 Sep 2026 08:00:00 +0000
+Message-ID: <att@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============9086666944919380887=="
+
+--===============9086666944919380887==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+See attached.
+
+--===============9086666944919380887==
+Content-Type: application/gzip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="big.tgz"
+MIME-Version: 1.0
+
+H4sIAAg/x2oC/+3NMQqAMBBE0TmKJ5BFozmPgkQbCzX3d7EIeAAtwn/Nn27WnJZ23nZ9yNwYwlNX
+2lkhe+3YD1GN6Qf5vKbDLwUAAAAAAFCnG6C4W3wAEgAA
+
+--===============9086666944919380887==--

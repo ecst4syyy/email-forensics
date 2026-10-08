@@ -32,6 +32,11 @@ class Indicator:
     context: str = ""
 
 
+def _clean(text: str | None) -> str:
+    """Lone surrogates (undecodable input bytes) become visible \\udcXX escapes."""
+    return (text or "").encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def _ip_type(value: str) -> str | None:
     try:
         return "ipv4" if ipaddress.ip_address(value).version == 4 else "ipv6"
@@ -45,7 +50,9 @@ def extract_iocs(report: Report, include_nested: bool = True) -> list[Indicator]
     def add(itype: str, value: str | None, role: str, report: Report, context: str = "") -> None:
         if not value:
             return
-        value = value.strip()
+        # Undecodable bytes surface as lone surrogates; make them visible escapes so every
+        # export (UTF-8 files, JSON, STIX ids) can carry the value.
+        value, context = _clean(value.strip()), _clean(context)
         verdict = report.assessment.verdict if report.assessment else "unknown"
         key = (itype, value.lower() if itype not in ("url", "filename", "subject") else value, role)
         if key not in seen:
@@ -130,7 +137,8 @@ def _stix_escape(value: str) -> str:
 
 
 def _stix_id(kind: str, *parts: str) -> str:
-    return f"{kind}--{uuid.uuid5(_NS, '|'.join(parts))}"
+    name = "|".join(parts).encode("utf-8", "surrogatepass").decode("utf-8", "replace")
+    return f"{kind}--{uuid.uuid5(_NS, name)}"
 
 
 def to_stix(indicators: list[Indicator], reports: list[Report]) -> str:
@@ -160,7 +168,7 @@ def to_stix(indicators: list[Indicator], reports: list[Report]) -> str:
     for r in reports:
         objects.append({
             "type": "report", "spec_version": "2.1", "id": _stix_id("report", r.evidence.sha256), "created": now,
-            "modified": now, "created_by_ref": identity_id, "name": (r.headers.subject or "email")[:250],
+            "modified": now, "created_by_ref": identity_id, "name": _clean(r.headers.subject or "email")[:250],
             "description": f"Email {r.evidence.sha256} assessed as {r.assessment.verdict if r.assessment else '?'} "
                            f"(score {r.assessment.score if r.assessment else '?'})",
             "report_types": ["threat-report"], "published": now,
@@ -199,7 +207,7 @@ def to_misp(indicators: list[Indicator], reports: list[Report]) -> str:
             "comment": f"{ind.role}; message {ind.verdict}" + (f"; {ind.context}" if ind.context else ""),
             "distribution": "5",
         })
-    subject = reports[0].headers.subject if len(reports) == 1 else f"{len(reports)} emails"
+    subject = _clean(reports[0].headers.subject) if len(reports) == 1 else f"{len(reports)} emails"
     event = {"Event": {
         "info": f"Email forensics: {subject or 'email'}"[:250],
         "date": datetime.now(timezone.utc).date().isoformat(), "threat_level_id": threat_level,

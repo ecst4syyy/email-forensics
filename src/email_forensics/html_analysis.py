@@ -48,6 +48,54 @@ def is_hidden_style(style: str) -> bool:
     return bool(color and bg and color.group(1).strip() == bg.group(1).strip())
 
 
+_CSS_RULE_RE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+_SIMPLE_SELECTOR_RE = re.compile(r"^[a-z0-9]*([.#])([\w-]+)$", re.I)
+
+
+def hidden_selectors(css: str) -> tuple[set[str], set[str]]:
+    """Classes and ids that a <style> block hides (simple .cls / #id selectors).
+
+    Rules inside @media blocks are ignored: responsive emails routinely hide
+    desktop-only content on phones, which is not evasion.
+    """
+    css = re.sub(r"/\*.*?\*/", "", css[:500_000], flags=re.S)
+    css = _strip_at_blocks(css)
+    classes, ids = set(), set()
+    for selectors, decls in _CSS_RULE_RE.findall(css):
+        if not is_hidden_style(decls):
+            continue
+        for sel in selectors.split(","):
+            m = _SIMPLE_SELECTOR_RE.match(sel.strip())
+            if m:
+                (classes if m.group(1) == "." else ids).add(m.group(2).lower())
+    return classes, ids
+
+
+def _strip_at_blocks(css: str) -> str:
+    out, i = [], 0
+    while True:
+        j = css.find("@", i)
+        if j < 0:
+            out.append(css[i:])
+            return "".join(out)
+        out.append(css[i:j])
+        brace = css.find("{", j)
+        semi = css.find(";", j)
+        if brace < 0 or (0 <= semi < brace):  # @import ...; style statements
+            i = semi + 1 if semi >= 0 else len(css)
+            continue
+        depth, k = 0, brace
+        while k < len(css):
+            if css[k] == "{":
+                depth += 1
+            elif css[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            k += 1
+        i = k + 1
+
+
 def is_remote(url: str) -> bool:
     return url.lower().lstrip().startswith(("http://", "https://", "//"))
 
@@ -72,6 +120,9 @@ class _Parser(HTMLParser):
         self.anchor_text: list[str] = []
         self.form: HtmlForm | None = None
         self.script_text: list[str] = []
+        self.style_text: list[str] = []
+        self.hidden_classes: set[str] = set()
+        self.hidden_ids: set[str] = set()
 
     # -- state helpers -------------------------------------------------------
     @property
@@ -142,10 +193,17 @@ class _Parser(HTMLParser):
         if tag in _BLOCK:
             self.visible.append("\n")
         if tag not in _VOID:
-            hidden = self._hidden or "hidden" in a or is_hidden_style(style)
+            classes = set(a.get("class", "").lower().split())
+            hidden = (self._hidden or "hidden" in a or is_hidden_style(style)
+                      or bool(classes & self.hidden_classes) or a.get("id", "").lower() in self.hidden_ids)
             self.stack.append((tag, hidden, self._not_rendered or tag in _NOT_RENDERED))
 
     def handle_endtag(self, tag):
+        if tag == "style" and self.style_text:
+            classes, ids = hidden_selectors("".join(self.style_text))
+            self.hidden_classes |= classes
+            self.hidden_ids |= ids
+            self.style_text = []
         if tag in ("a", "area"):
             self._close_anchor()
         elif tag == "form":
@@ -160,6 +218,8 @@ class _Parser(HTMLParser):
     def handle_data(self, data):
         if self.stack and self.stack[-1][0] == "script":
             self.script_text.append(data)
+        elif self.stack and self.stack[-1][0] == "style":
+            self.style_text.append(data)
         if self._not_rendered:
             return
         if self._hidden:

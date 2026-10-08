@@ -9,3 +9,4 @@ dist/
 # never commit real evidence
 evidence/
 cases/
+fuzz-crashes/

@@ -66,6 +66,10 @@ def main(argv: list[str] | None = None) -> int:
     enrich.add_argument("--no-enrich-cache", action="store_true", help="do not read or write the cache")
     enrich.add_argument("--enrich-record", metavar="FILE", help="save every enrichment request/answer to FILE")
     enrich.add_argument("--enrich-replay", metavar="FILE", help="answer enrichment only from a recording (offline)")
+    analyze.add_argument("--timeout", metavar="SECONDS", type=float,
+                         help="give up on a message after SECONDS (it is still reported, as incomplete)")
+    analyze.add_argument("--max-nesting", metavar="N", type=int, default=3,
+                         help="analyse attached emails up to N levels deep (default %(default)s)")
     analyze.add_argument("--yara", metavar="PATH", action="append", default=[],
                          help="YARA rule file or directory (repeatable; needs yara-python)")
     analyze.add_argument("--rules", metavar="FILE", action="append", default=[],
@@ -107,7 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     options = AnalysisOptions(extract_dir=args.extract_dir, protected_domains=protected,
                               resolver=resolver, spf_ip=args.spf_ip, enricher=enricher,
-                              yara_rules=yara_rules, custom_rules=custom)
+                              yara_rules=yara_rules, custom_rules=custom, timeout=args.timeout,
+                              max_nested_depth=max(0, args.max_nesting))
     for path in args.files:
         try:
             for report in analyze_path(path, options):

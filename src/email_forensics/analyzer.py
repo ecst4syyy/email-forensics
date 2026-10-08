@@ -8,6 +8,7 @@ report of its own).
 
 from __future__ import annotations
 
+import signal
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from email.message import EmailMessage
@@ -24,8 +25,9 @@ from .enrich import Enricher
 from .identity import analyze_identity
 from .iocs import extract_iocs
 from .loader import EvidenceError, _info, detect_format, iter_mbox, load_evidence, load_msg_bytes, parse_bytes
-from .mime import MESSAGE_TYPES, walk_mime
-from .models import EvidenceInfo, Finding, NestedReport, Report, Severity
+from .mime import MESSAGE_TYPES, MimeTree, walk_mime
+from .models import (BodyAnalysis, EvidenceInfo, Finding, HeaderAnalysis, IdentityAnalysis, NestedReport, Report,
+                     Severity)
 from .msg import MsgInfo, is_msg
 from .resolver import RecordingResolver
 from .rules import run_header_rules
@@ -43,6 +45,7 @@ class AnalysisOptions:
     spf_ip: str | None = None
     max_nested_depth: int = MAX_NESTED_DEPTH
     enricher: Enricher | None = None
+    timeout: float | None = None  # seconds per message (POSIX only)
     yara_rules: object | None = None  # compiled yara.Rules
     custom_rules: list[Rule] = field(default_factory=list)
 
@@ -63,46 +66,103 @@ def analyze_path(path: str | Path, options: AnalysisOptions | None = None) -> It
         raise EvidenceError(f"not a file: {path}")
     if detect_format(path) == "mbox":
         for evidence, raw, msg in iter_mbox(path):
-            yield analyze_message(evidence, raw, msg, options)
+            yield analyze_with_timeout(evidence, raw, msg, options)
         return
     evidence, raw, msg, msg_info = load_evidence(path)
-    yield analyze_message(evidence, raw, msg, options, msg_info)
+    yield analyze_with_timeout(evidence, raw, msg, options, msg_info)
+
+
+def analyze_with_timeout(evidence: EvidenceInfo, raw: bytes, msg: EmailMessage, options: AnalysisOptions,
+                         msg_info: MsgInfo | None = None) -> Report:
+    """analyze_message with a wall-clock limit; a message that runs out of time still gets a
+    (minimal) report so it is never silently dropped from a batch."""
+    if not options.timeout or not hasattr(signal, "setitimer"):
+        return analyze_message(evidence, raw, msg, options, msg_info)
+
+    def on_alarm(signum, frame):
+        raise AnalysisTimeout()
+
+    previous = signal.signal(signal.SIGALRM, on_alarm)
+    signal.setitimer(signal.ITIMER_REAL, options.timeout)
+    try:
+        return analyze_message(evidence, raw, msg, options, msg_info)
+    except AnalysisTimeout:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        try:
+            headers = analyze_headers(msg)
+        except Exception:  # noqa: BLE001
+            headers = HeaderAnalysis()
+        report = Report(evidence=evidence, headers=headers, msg=msg_info, findings=[Finding(
+            "ANALYSIS_TIMEOUT", Severity.MEDIUM,
+            f"Analysis did not finish within {options.timeout:g}s; results are incomplete. Messages crafted to "
+            "exhaust analyzers are themselves suspicious.", {"timeout_seconds": options.timeout})])
+        report.assessment = assess(report)
+        return report
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+class AnalysisTimeout(Exception):
+    pass
 
 
 def analyze_message(evidence: EvidenceInfo, raw: bytes, msg: EmailMessage, options: AnalysisOptions,
                     msg_info: MsgInfo | None = None, depth: int = 0) -> Report:
-    headers = analyze_headers(msg)
-    findings = run_header_rules(msg, headers)
-    tree = walk_mime(msg)
-    body, body_findings = analyze_body(msg, tree)
-    attachments, attachment_findings = analyze_attachments(tree)
-    correlate_with_body(attachment_findings, [tb.preview for tb in body.text_bodies])
+    errors: list[Finding] = []
+
+    def stage(name: str, fn, default):
+        """Run one analyzer; an unexpected bug in it must not lose the rest of the report."""
+        try:
+            return fn()
+        except (AnalysisTimeout, KeyboardInterrupt, MemoryError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - isolation is the point
+            errors.append(Finding("ANALYZER_ERROR", Severity.LOW,
+                                  f"The {name} analyzer failed ({type(exc).__name__}); its results are missing "
+                                  "from this report.", {"stage": name, "error": f"{type(exc).__name__}: {exc}"[:300]}))
+            return default
+
+    headers = stage("header", lambda: analyze_headers(msg), None) or HeaderAnalysis()
+    findings = stage("header rules", lambda: run_header_rules(msg, headers), [])
+    tree = stage("MIME", lambda: walk_mime(msg), None) or MimeTree()
+    body, body_findings = stage("body", lambda: analyze_body(msg, tree), (BodyAnalysis(parts=tree.parts), []))
+    attachments, attachment_findings = stage("attachment", lambda: analyze_attachments(tree), ([], []))
+    stage("password correlation",
+          lambda: correlate_with_body(attachment_findings, [tb.preview for tb in body.text_bodies]), None)
     if options.extract_dir is not None and attachments:
-        extract_attachments(tree, attachments, options.extract_dir, evidence.sha256)
-    identity, identity_findings = analyze_identity(msg, headers, body, attachments, options.protected_domains)
-    auth, auth_findings = verify_authentication(raw, msg, headers, options.resolver, options.spf_ip,
-                                                reconstructed=evidence.converted)
+        extract_attachments(tree, attachments, options.extract_dir, evidence.sha256)  # I/O errors must surface
+    identity, identity_findings = stage(
+        "identity", lambda: analyze_identity(msg, headers, body, attachments, options.protected_domains),
+        (IdentityAnalysis(), []))
+    auth, auth_findings = stage(
+        "authentication", lambda: verify_authentication(raw, msg, headers, options.resolver, options.spf_ip,
+                                                        reconstructed=evidence.converted), (None, []))
     findings += body_findings + attachment_findings + identity_findings + auth_findings
 
-    nested = _analyze_nested(tree, evidence, options, depth) if depth < options.max_nested_depth else []
+    nested = (stage("attached message", lambda: _analyze_nested(tree, evidence, options, depth), [])
+              if depth < options.max_nested_depth else [])
     findings += _nested_findings(nested)
     if msg_info is not None:
         findings += _msg_findings(msg_info)
-    findings.sort(key=lambda f: (-f.severity.rank, f.code))
     report = Report(evidence=evidence, headers=headers, body=body, attachments=attachments, identity=identity,
                     auth=auth, msg=msg_info, nested=nested, findings=findings)
     if options.enricher is not None:
-        report.enrichment, enrich_findings = options.enricher.enrich(extract_iocs(report, include_nested=False),
-                                                                     headers.date)
+        report.enrichment, enrich_findings = stage(
+            "enrichment", lambda: options.enricher.enrich(extract_iocs(report, include_nested=False), headers.date),
+            (None, []))
         report.findings += enrich_findings
     if options.yara_rules is not None:
-        report.yara, yara_findings = yara_scan.scan(options.yara_rules, raw, tree,
-                                                    [(tb.part, tb.preview) for tb in body.text_bodies], attachments)
+        report.yara, yara_findings = stage(
+            "YARA", lambda: yara_scan.scan(options.yara_rules, raw, tree,
+                                           [(tb.part, tb.preview) for tb in body.text_bodies], attachments), ([], []))
         report.findings += yara_findings
     if options.custom_rules:
         report.assessment = assess(report)  # rules may test score/verdict
-        rule_findings, report.suppressed = evaluate_rules(options.custom_rules, report, msg)
+        rule_findings, report.suppressed = stage(
+            "custom rule", lambda: evaluate_rules(options.custom_rules, report, msg), ([], []))
         report.findings += rule_findings
+    report.findings += errors
     report.findings.sort(key=lambda f: (-f.severity.rank, f.code))
     report.assessment = assess(report)
     return report

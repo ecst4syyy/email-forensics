@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from email.message import Message
 
 from .domains import org_domain
@@ -53,7 +54,39 @@ def analyze_body(msg: Message, tree: MimeTree | None = None) -> tuple[BodyAnalys
         findings += url_findings(url)
     findings += _link_text_findings(links)
     findings += _structure_findings(body)
+    findings += _alternative_findings(body)
     return body, findings
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[^\W\d_]{3,}", text.lower()))
+
+
+def _alternative_findings(body: BodyAnalysis) -> list[Finding]:
+    """text/plain and text/html alternatives that say different things: filters often read one
+    version, people see the other."""
+    types = {p.path: p.content_type for p in body.parts}
+    groups: dict[str, dict[str, TextBody]] = {}
+    for tb in body.text_bodies:
+        parent = tb.part.rsplit(".", 1)[0] if "." in tb.part else ""
+        if types.get(parent) == "multipart/alternative":
+            groups.setdefault(parent, {})[tb.content_type] = tb
+    out = []
+    for parent, versions in groups.items():
+        plain, html = versions.get("text/plain"), versions.get("text/html")
+        if not plain or not html:
+            continue
+        a, b = _words(plain.preview), _words(html.preview)
+        if len(a) < 15 or len(b) < 15:
+            continue
+        similarity = len(a & b) / len(a | b)
+        if similarity < 0.2:
+            out.append(Finding("BODY_ALTERNATIVES_DIFFER", Severity.MEDIUM,
+                               f"The plain-text and HTML versions in part {parent} share only {similarity:.0%} of their "
+                               "words; filters and people may be reading different messages.",
+                               {"part": parent, "similarity": round(similarity, 3),
+                                "plain_words": len(a), "html_words": len(b)}))
+    return out
 
 
 def _link_text_findings(links: list[Link]) -> list[Finding]:

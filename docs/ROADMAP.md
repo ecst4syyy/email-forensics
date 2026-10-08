@@ -127,7 +127,7 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | **8** ✅ | **Scoring & reporting** | Weighted risk score with explanations, HTML report, IOC export (CSV, STIX 2.1, MISP JSON) |
 | **9** ✅ | **Enrichment (opt-in)** | IP geolocation / ASN, WHOIS domain age, VirusTotal / URLhaus / AbuseIPDB hash & URL lookups with caching and rate limiting |
 | **10** ✅ | **YARA & custom rules** | YARA scanning of bodies and attachments, user-defined rules file (YAML) for header/body conditions |
-| 11 | Hardening | Fuzzing (Hypothesis / atheris), size and recursion limits, timeouts, malformed-corpus regression suite, performance on large mailboxes |
+| **11** ✅ | **Hardening** | Fuzzing (Hypothesis / atheris), size and recursion limits, timeouts, malformed-corpus regression suite, performance on large mailboxes |
 | 12 | Case management | Case folders, chain-of-custody log, bulk ingest, search across a case, report signing |
 | 13+ | UI / integrations | Web UI or TUI, REST API, SIEM/SOAR integration, PST ingestion (`libpff`) |
 
@@ -139,7 +139,7 @@ Carried forward from Day 4: full Unicode TR39 confusables table, newly-registere
 
 Carried forward from Day 3: RAR/7z/ISO listing via optional extras, ssdeep/TLSH similarity hashes, correlating attachment and body URLs into one IOC list.
 
-Carried forward from Day 2: `<style>`-block class rules for hidden text, divergence between the text/plain and text/html alternatives, and the Public Suffix List for `org_domain`.
+Carried forward from Day 2: done (Day 11: `<style>` class rules, text/html divergence; Day 5: Public Suffix List).
 
 We can reorder these as priorities change. Days 2–4 give the most value for phishing triage.
 

@@ -50,6 +50,7 @@ _PREFIX_CATEGORIES = (
     (("RULE_",), "custom rules"),
     (("RCV_", "HDR_", "PARSE_", "MIME_", "BODY_", "TEXT_"), "structure and evasion"),
     (("MSG_",), "context"),
+    (("ANALYSIS_", "ANALYZER_"), "analysis"),
 )
 
 
