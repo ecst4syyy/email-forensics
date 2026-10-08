@@ -128,7 +128,7 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | **9** ✅ | **Enrichment (opt-in)** | IP geolocation / ASN, WHOIS domain age, VirusTotal / URLhaus / AbuseIPDB hash & URL lookups with caching and rate limiting |
 | **10** ✅ | **YARA & custom rules** | YARA scanning of bodies and attachments, user-defined rules file (YAML) for header/body conditions |
 | **11** ✅ | **Hardening** | Fuzzing (Hypothesis / atheris), size and recursion limits, timeouts, malformed-corpus regression suite, performance on large mailboxes |
-| 12 | Case management | Case folders, chain-of-custody log, bulk ingest, search across a case, report signing |
+| **12** ✅ | **Case management** | Case folders, chain-of-custody log, bulk ingest, search across a case, report signing |
 | 13+ | UI / integrations | Web UI or TUI, REST API, SIEM/SOAR integration, PST ingestion (`libpff`) |
 
 Carried forward from Day 7: native PST/OST reading (currently: convert with readpst), RTF de-encapsulation of HTML bodies in .msg.

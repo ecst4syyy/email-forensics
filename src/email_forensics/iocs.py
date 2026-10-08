@@ -114,12 +114,18 @@ def extract_iocs(report: Report, include_nested: bool = True) -> list[Indicator]
 
 # --------------------------------------------------------------------------- CSV
 
+def csv_safe(value: str) -> str:
+    """Neutralise spreadsheet formulas: attacker-controlled values (subjects, filenames) such as
+    '=HYPERLINK(...)' would otherwise be evaluated when the CSV is opened (CSV injection)."""
+    return "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
+
+
 def to_csv(indicators: list[Indicator]) -> str:
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=list(Indicator.__dataclass_fields__))
     writer.writeheader()
     for ind in indicators:
-        writer.writerow(asdict(ind))
+        writer.writerow({k: csv_safe(v) if isinstance(v, str) else v for k, v in asdict(ind).items()})
     return buf.getvalue()
 
 

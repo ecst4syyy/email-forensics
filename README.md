@@ -2,7 +2,14 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 11 (hardening)
+## Status: Day 12 (case management)
+
+**Day 12**
+- `email-forensics case ...` organises an investigation in a **case folder**: read-only evidence copies verified by hash at intake, signed per-message reports (JSON/HTML/text), a searchable index, a case overview and IOC export
+- **Tamper-evident chain of custody** (`custody.jsonl`): every action (case created, evidence added with original path/mtime/note, analysed with report hashes, case report) is a hash-chained entry signed with the case's **Ed25519** key. `case verify` recomputes the chain, re-hashes every evidence file (and checks it is still read-only) and checks every report signature
+- `case search` finds an indicator, sender or subject across all messages; the case report lists **indicators shared by several messages**, which is how campaigns show up
+- `verify-signature REPORT` lets a recipient verify a report you sent them. The private key can live outside the case folder (`case init --key FILE`)
+- CSV exports neutralise spreadsheet formulas (CSV injection) in attacker-controlled values
 
 **Day 11**
 - **Analyzer isolation**: an unexpected bug in one analyzer (identity, payloads, auth, ...) no longer loses the report. The rest still runs and an `ANALYZER_ERROR` finding names the failed stage
@@ -121,6 +128,20 @@ PYTHONPATH=src python -m email_forensics analyze tests/fixtures/bec_spoof.eml
 ```
 
 Exit code: `0` on success, `1` if `--fail-on` matched, `2` if an input file could not be loaded.
+
+## Case workflow
+
+```bash
+email-forensics case init cases/42 --name "Invoice phishing wave" --examiner "J. Doe"
+email-forensics case add cases/42 reported/*.eml export.mbox --note "SOC ticket 4711"
+email-forensics case analyze cases/42 --protected-domain acme-corp.com --doh --dns-record cases/42/dns.json
+email-forensics case report cases/42           # case-report.html + iocs.csv
+email-forensics case search cases/42 paypa1    # where else did this indicator appear?
+email-forensics case verify cases/42           # custody chain, evidence hashes, report signatures
+email-forensics case log cases/42
+```
+
+The signing key proves that reports and custody entries were produced with this case's key and have not changed since. It does not prove *who* held the key; protect it like any credential (or keep it outside the case folder with `--key`).
 
 ## How scoring works
 
@@ -258,6 +279,7 @@ Layout of `src/email_forensics/`:
 | `enrich` | Opt-in enrichment providers, cache, recording/replay |
 | `yara_scan`, `custom_rules` | YARA scanning; JSON/TOML detection and suppression rules |
 | `scoring` | Score, verdict and reasons |
+| `case` | Case folders, custody chain, signing, search, case report |
 | `report`, `report_html`, `iocs`, `cli` | Text/JSON/HTML output, IOC export (CSV/STIX/MISP), command line |
 
 ## Third-party data

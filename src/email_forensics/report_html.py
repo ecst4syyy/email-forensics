@@ -81,13 +81,18 @@ def _kv(rows) -> str:
     return f'<table class="kv">{body}</table>'
 
 
+def html_head(title: str) -> str:
+    """Document start with the stylesheet and the safety headers (no scripts, no remote loads)."""
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">'
+            f'<meta name="referrer" content="no-referrer"><title>{esc(title)}</title><style>{_CSS}</style></head><body>')
+
+
 def render_html(reports: list[Report], title: str | None = None) -> str:
     title = title or (f"Email forensics: {reports[0].headers.subject or 'report'}" if len(reports) == 1
                       else f"Email forensics: {len(reports)} messages")
-    parts = [f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
-             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-             f'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">'
-             f'<meta name="referrer" content="no-referrer"><title>{esc(title)}</title><style>{_CSS}</style></head><body><main>']
+    parts = [html_head(title) + "<main>"]
     if len(reports) > 1:
         parts.append(_index(reports))
     for i, r in enumerate(reports, 1):
