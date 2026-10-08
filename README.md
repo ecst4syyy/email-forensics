@@ -2,7 +2,13 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 7 (input formats)
+## Status: Day 8 (scoring and reporting)
+
+**Day 8**
+- **Risk score 0–100 and a verdict** (clean < 12 ≤ caution < 35 ≤ suspicious < 70 ≤ malicious), with the findings that produced every point (see *How scoring works*)
+- **HTML report** (`--format html`): one self-contained file, light/dark and phone-friendly, safe to open. Everything is escaped, URLs/domains/IPs are defanged (`hxxps://evil[.]test`), nothing is clickable, and a `default-src 'none'` Content Security Policy blocks scripts and remote loads
+- **IOC export** (`--iocs FILE`, `--ioc-format csv|stix|misp`): email addresses, domains, IPs, URLs, subjects, Message-IDs, filenames and hashes of attachments, archive members and embedded files, each with its role and the message verdict. STIX 2.1 ids are deterministic (same evidence, same ids)
+- `--output FILE`, `--fail-on caution|suspicious|malicious` (exit status 1 for automation), and score/verdict columns in `--summary`
 
 **Day 7**
 - **Outlook `.msg`** files (pure Python, via the CFB reader): original internet headers from `PR_TRANSPORT_MESSAGE_HEADERS`, plain/HTML/compressed-RTF (LZFu) bodies, recipients, attachments and embedded messages are rebuilt as MIME and analysed like any email. `.msg` metadata (submit/delivery/creation/modification times, last modified by) is reported. Messages without transport headers (sent items, drafts) get headers rebuilt from MAPI properties, and the report says so
@@ -78,6 +84,8 @@ pip install -e ".[dev]"
 email-forensics analyze suspicious.eml
 email-forensics analyze reported.msg                      # Outlook messages
 email-forensics analyze export.mbox --summary             # one line per message
+email-forensics analyze suspicious.eml --format html -o report.html --iocs iocs.json   # STIX 2.1
+email-forensics analyze suspicious.eml --iocs iocs.csv --fail-on suspicious
 email-forensics analyze --json --min-severity medium *.eml
 email-forensics analyze suspicious.eml --extract-dir ./case42/attachments
 email-forensics analyze suspicious.eml --protected-domain acme-corp.com --protected-domains-file partners.txt
@@ -87,7 +95,13 @@ email-forensics analyze suspicious.eml --dns-replay case42-dns.json            #
 PYTHONPATH=src python -m email_forensics analyze tests/fixtures/bec_spoof.eml
 ```
 
-Exit code: `0` on success, `2` if an input file could not be loaded.
+Exit code: `0` on success, `1` if `--fail-on` matched, `2` if an input file could not be loaded.
+
+## How scoring works
+
+Every finding contributes points by severity (high 25, medium 10, low 3, info 0) inside its category: sender identity, authentication, links and content, attachments, payload, sending software, structure and evasion. Within a category each further finding counts 60% of the previous one (capped at 60), so ten findings about one phishing link don't outweigh three independent signals. The total maps to `100 × (1 − e^(−points/50))`.
+
+Some findings are near-conclusive on their own and set a minimum score: an auto-running macro with dangerous calls, a shortcut that runs PowerShell, HTML smuggling, a credential form, a double extension, a phishing-kit mailer, and so on. An attached message's score counts towards its parent. Points are never subtracted, because passing SPF/DKIM/DMARC proves who sent a message, not that it is benign; attackers authenticate their own lookalike domains. The verdict supports a human decision; the report shows the reasons so an analyst can check them.
 
 ## Finding codes
 
@@ -205,7 +219,8 @@ Layout of `src/email_forensics/`:
 | `body` | Body orchestration and body findings |
 | `domains` | Shared domain helpers |
 | `analyzer` | Runs everything and builds the `Report` |
-| `report`, `cli` | Output |
+| `scoring` | Score, verdict and reasons |
+| `report`, `report_html`, `iocs`, `cli` | Text/JSON/HTML output, IOC export (CSV/STIX/MISP), command line |
 
 ## Third-party data
 

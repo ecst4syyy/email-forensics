@@ -44,13 +44,14 @@ def invisible_char_findings(location: str, text: str | None, prominent: bool) ->
     return out
 
 
-def safe_display(text: str | None) -> str:
+def safe_display(text: str | None, keep_newlines: bool = False) -> str:
     """Escape invisible, bidi and control characters so attacker text can't alter the display."""
     if text is None:
         return ""
+    allowed = "\t\n" if keep_newlines else "\t"
     out = []
     for ch in text:
-        if ch in ZERO_WIDTH or ch in BIDI_CONTROLS or ch == "\u200d" or (ord(ch) < 32 and ch not in "\t") or 0x7F <= ord(ch) < 0xA0:
+        if ch in ZERO_WIDTH or ch in BIDI_CONTROLS or ch == "\u200d" or (ord(ch) < 32 and ch not in allowed) or 0x7F <= ord(ch) < 0xA0:
             out.append(f"\\u{ord(ch):04x}")
         else:
             out.append(ch)

@@ -117,7 +117,7 @@ def test_cli_summary(tmp_path, capsys):
     msg = write(tmp_path, "p.msg", s.phish_msg())
     assert main(["analyze", "--summary", str(box), str(msg)]) == 0
     out = capsys.readouterr().out
-    assert "Quarterly report" in out and "Urgent wire transfer" in out and "3 message(s), 2 with high" in out
+    assert "Quarterly report" in out and "Urgent wire transfer" in out and "3 message(s): 2 malicious, 1 clean" in out
     assert main(["analyze", "--summary", "--json", str(box)]) == 0
     rows = json.loads(capsys.readouterr().out)
     assert rows[1]["high"] >= 1 and rows[0]["high"] == 0

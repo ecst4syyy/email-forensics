@@ -10,7 +10,9 @@ from . import __version__
 from .analyzer import AnalysisOptions, analyze_path
 from .loader import EvidenceError
 from .models import Severity
+from .iocs import extract_iocs, to_csv, to_misp, to_stix
 from .report import summary_row, to_json, to_summary, to_text
+from .report_html import render_html
 from .resolver import DohResolver, RecordingResolver, ReplayResolver, SystemResolver
 
 
@@ -21,7 +23,14 @@ def main(argv: list[str] | None = None) -> int:
 
     analyze = sub.add_parser("analyze", help="analyze .eml, .msg or mbox files")
     analyze.add_argument("files", nargs="+")
-    analyze.add_argument("--json", action="store_true", help="output JSON instead of text")
+    analyze.add_argument("--format", choices=["text", "json", "html"], default="text", help="report format")
+    analyze.add_argument("--json", action="store_true", help="same as --format json")
+    analyze.add_argument("-o", "--output", metavar="FILE", help="write the report to FILE instead of stdout")
+    analyze.add_argument("--iocs", metavar="FILE", help="also export indicators to FILE")
+    analyze.add_argument("--ioc-format", choices=["csv", "stix", "misp"],
+                         help="indicator format (default: csv for .csv files, otherwise stix)")
+    analyze.add_argument("--fail-on", choices=["caution", "suspicious", "malicious"],
+                         help="exit with status 1 if any message reaches this verdict (for automation)")
     analyze.add_argument("--summary", action="store_true",
                          help="one line per message instead of full reports (useful for mailboxes)")
     analyze.add_argument("--min-severity", choices=[s.value for s in Severity], default="info",
@@ -79,19 +88,36 @@ def main(argv: list[str] | None = None) -> int:
     if resolver is not None and args.dns_record:
         resolver.save(args.dns_record)
 
+    fmt = "json" if args.json else args.format
     if args.summary:
-        if args.json:
-            print(json.dumps([summary_row(r) for r in outputs], indent=2, ensure_ascii=False))
-        else:
-            print(to_summary(outputs))
-        return exit_code
-    if args.json:
-        if len(outputs) == 1:
-            print(to_json(outputs[0]))
-        else:
-            print(json.dumps([r.to_dict() for r in outputs], indent=2, ensure_ascii=False))
+        text = (json.dumps([summary_row(r) for r in outputs], indent=2, ensure_ascii=False) if fmt == "json"
+                else to_summary(outputs))
+    elif fmt == "html":
+        text = render_html(outputs) if outputs else ""
+    elif fmt == "json":
+        text = to_json(outputs[0]) if len(outputs) == 1 else json.dumps([r.to_dict() for r in outputs],
+                                                                         indent=2, ensure_ascii=False)
     else:
-        print("\n\n".join(to_text(r) for r in outputs))
+        text = "\n\n".join(to_text(r) for r in outputs)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8", errors="backslashreplace") as fh:
+            fh.write(text + "\n")
+    else:
+        print(text)
+
+    if args.iocs and outputs:
+        indicators = [i for r in outputs for i in extract_iocs(r)]
+        kind = args.ioc_format or ("csv" if args.iocs.lower().endswith(".csv") else "stix")
+        data = {"csv": lambda: to_csv(indicators), "stix": lambda: to_stix(indicators, outputs),
+                "misp": lambda: to_misp(indicators, outputs)}[kind]()
+        with open(args.iocs, "w", encoding="utf-8", newline="") as fh:
+            fh.write(data)
+
+    if args.fail_on and exit_code == 0:
+        order = ["clean", "caution", "suspicious", "malicious"]
+        threshold = order.index(args.fail_on)
+        if any(r.assessment and order.index(r.assessment.verdict) >= threshold for r in outputs):
+            return 1
     return exit_code
 
 

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .auth import AuthVerification
     from .msg import MsgInfo
+    from .scoring import Assessment
     from .payloads import PayloadAnalysis
 
 
@@ -247,6 +248,7 @@ class Report:
     auth: AuthVerification | None = None
     msg: MsgInfo | None = None
     nested: list[NestedReport] = field(default_factory=list)
+    assessment: Assessment | None = None
     findings: list[Finding] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

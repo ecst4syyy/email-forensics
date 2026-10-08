@@ -24,6 +24,7 @@ from .models import EvidenceInfo, Finding, NestedReport, Report, Severity
 from .msg import MsgInfo, is_msg
 from .resolver import RecordingResolver
 from .rules import run_header_rules
+from .scoring import assess
 
 MAX_NESTED_DEPTH = 3
 MAX_NESTED_PER_MESSAGE = 20
@@ -80,8 +81,10 @@ def analyze_message(evidence: EvidenceInfo, raw: bytes, msg: EmailMessage, optio
     if msg_info is not None:
         findings += _msg_findings(msg_info)
     findings.sort(key=lambda f: (-f.severity.rank, f.code))
-    return Report(evidence=evidence, headers=headers, body=body, attachments=attachments, identity=identity,
-                  auth=auth, msg=msg_info, nested=nested, findings=findings)
+    report = Report(evidence=evidence, headers=headers, body=body, attachments=attachments, identity=identity,
+                    auth=auth, msg=msg_info, nested=nested, findings=findings)
+    report.assessment = assess(report)
+    return report
 
 
 def _analyze_nested(tree, parent: EvidenceInfo, options: AnalysisOptions, depth: int) -> list[NestedReport]:

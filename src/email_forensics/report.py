@@ -25,7 +25,15 @@ def to_text(report: Report, indent: str = "") -> str:
 
 def _to_text(report: Report) -> str:
     e, h = report.evidence, report.headers
-    lines = [
+    a = report.assessment
+    lines = []
+    if a is not None:
+        lines += [f"=== Verdict: {a.verdict.upper()} (score {a.score}/100) ==="]
+        lines += [f"  +{r.points:>4g}  {r.code}: {safe_display(r.message)[:150]}" for r in a.reasons[:5]]
+        if a.floor:
+            lines.append(f"  (minimum score set by {a.floor})")
+        lines.append("")
+    lines += [
         "=== Evidence ===",
         f"File:      {safe_display(e.path)}",
         f"Format:    {e.format}{' (MIME rebuilt/re-serialised for analysis)' if e.converted else ''}",
@@ -214,7 +222,9 @@ def summary_row(report: Report) -> dict:
         if f.severity.value in counts:
             counts[f.severity.value] += 1
     h = report.headers
+    a = report.assessment
     return {
+        "score": a.score if a else None, "verdict": a.verdict if a else None,
         "evidence": report.evidence.path, "sha256": report.evidence.sha256, "date": h.date.isoformat() if h.date else None,
         "from": h.from_address, "subject": h.subject, "attachments": len(report.attachments),
         "nested": len(report.nested), **counts,
@@ -223,12 +233,14 @@ def summary_row(report: Report) -> dict:
 
 
 def to_summary(reports: list[Report]) -> str:
-    lines = [f"{'#':>4}  {'HIGH':>4} {'MED':>4} {'LOW':>4}  {'DATE':<16}  {'FROM':<32}  SUBJECT"]
+    lines = [f"{'#':>4}  {'SCORE':>5} {'VERDICT':<10}  {'HIGH':>4} {'MED':>4}  {'DATE':<16}  {'FROM':<32}  SUBJECT"]
     for i, r in enumerate(reports, 1):
         row = summary_row(r)
         date = (row["date"] or "-")[:16]
-        lines.append(f"{i:>4}  {row['high']:>4} {row['medium']:>4} {row['low']:>4}  {date:<16}  "
+        lines.append(f"{i:>4}  {row['score'] if row['score'] is not None else '-':>5} {row['verdict'] or '-':<10}  "
+                     f"{row['high']:>4} {row['medium']:>4}  {date:<16}  "
                      f"{safe_display(row['from'] or '-')[:32]:<32}  {safe_display(row['subject'] or '-')[:60]}")
-    total_high = sum(1 for r in reports if any(f.severity.value == "high" for f in r.findings))
-    lines.append(f"\n{len(reports)} message(s), {total_high} with high-severity findings")
+    verdicts = [r.assessment.verdict for r in reports if r.assessment]
+    counts = ", ".join(f"{verdicts.count(v)} {v}" for v in ("malicious", "suspicious", "caution", "clean") if verdicts.count(v))
+    lines.append(f"\n{len(reports)} message(s): {counts or 'none assessed'}")
     return "\n".join(lines)
