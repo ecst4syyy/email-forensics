@@ -17,7 +17,9 @@ from .attachments import analyze_attachments, correlate_with_body, extract_attac
 from .auth import verify_authentication
 from .body import analyze_body
 from .headers import analyze_headers
+from .enrich import Enricher
 from .identity import analyze_identity
+from .iocs import extract_iocs
 from .loader import EvidenceError, _info, detect_format, iter_mbox, load_evidence, load_msg_bytes, parse_bytes
 from .mime import MESSAGE_TYPES, walk_mime
 from .models import EvidenceInfo, Finding, NestedReport, Report, Severity
@@ -37,6 +39,7 @@ class AnalysisOptions:
     resolver: RecordingResolver | None = None
     spf_ip: str | None = None
     max_nested_depth: int = MAX_NESTED_DEPTH
+    enricher: Enricher | None = None
 
 
 def analyze_file(path: str | Path, extract_dir: str | Path | None = None,
@@ -83,6 +86,10 @@ def analyze_message(evidence: EvidenceInfo, raw: bytes, msg: EmailMessage, optio
     findings.sort(key=lambda f: (-f.severity.rank, f.code))
     report = Report(evidence=evidence, headers=headers, body=body, attachments=attachments, identity=identity,
                     auth=auth, msg=msg_info, nested=nested, findings=findings)
+    if options.enricher is not None:
+        report.enrichment, enrich_findings = options.enricher.enrich(extract_iocs(report, include_nested=False),
+                                                                     headers.date)
+        report.findings = sorted(report.findings + enrich_findings, key=lambda f: (-f.severity.rank, f.code))
     report.assessment = assess(report)
     return report
 

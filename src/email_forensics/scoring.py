@@ -32,7 +32,7 @@ CONCLUSIVE = {
     "SCRIPT_DOWNLOADER": 85, "SCRIPT_ENCODED_COMMAND": 80, "SCRIPT_RANSOMWARE": 90,
     "ATT_HTML_SMUGGLING": 85, "HTML_CREDENTIAL_FORM": 75, "ATT_DOUBLE_EXTENSION": 75,
     "HDR_MAILER_PHISHING_KIT": 75, "PROVIDER_PHISH_VERDICT": 75, "PROVIDER_EXTERNAL_CLAIMS_INTERNAL": 75,
-    "ATT_ZIP_BOMB": 70,
+    "ATT_ZIP_BOMB": 70, "ENRICH_KNOWN_MALWARE": 90, "ENRICH_URLHAUS_LISTED": 80,
 }
 
 _PREFIX_CATEGORIES = (
@@ -45,6 +45,7 @@ _PREFIX_CATEGORIES = (
     (("MACRO_", "DOC_", "PDF_", "LNK_", "SCRIPT_", "ONENOTE_", "RTF_"), "payload"),
     (("HDR_MAILER", "HDR_PHP"), "sending software"),
     (("NESTED_",), "attached messages"),
+    (("ENRICH_",), "reputation"),
     (("RCV_", "HDR_", "PARSE_", "MIME_", "BODY_", "TEXT_"), "structure and evasion"),
     (("MSG_",), "context"),
 )

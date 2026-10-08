@@ -2,7 +2,16 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 8 (scoring and reporting)
+## Status: Day 9 (opt-in enrichment)
+
+**Day 9**
+- `--enrich` looks up the message's indicators with external services. It is off by default, sends indicators but **never files** (hashes only), and every request and answer is recorded in the JSON report
+  - **RDAP** (no key): domain registration date and registrar. Domains registered shortly **before the message was sent** are flagged (`ENRICH_NEW_DOMAIN`: < 30 days high, < 180 days medium)
+  - **Team Cymru** (no key, needs DNS: `--online`, `--doh` or `--dns-replay`): ASN, network and country of public IPs
+  - **VirusTotal** (`VT_API_KEY`), **URLhaus** and **MalwareBazaar** (`ABUSE_CH_API_KEY`), **AbuseIPDB** (`ABUSEIPDB_API_KEY`): hash, URL, domain and IP reputation
+- Answers are cached for 24 h (`--enrich-cache DIR`, `--no-enrich-cache`), real network calls are rate limited per provider (VirusTotal public API: 4/min), and each provider is capped at 50 lookups per run
+- `--enrich-record FILE` saves every request/answer (API keys are never written anywhere); `--enrich-replay FILE` reproduces the enrichment offline
+- Reputation findings feed the score (known malware and URLhaus listings set a minimum score)
 
 **Day 8**
 - **Risk score 0–100 and a verdict** (clean < 12 ≤ caution < 35 ≤ suspicious < 70 ≤ malicious), with the findings that produced every point (see *How scoring works*)
@@ -86,6 +95,7 @@ email-forensics analyze reported.msg                      # Outlook messages
 email-forensics analyze export.mbox --summary             # one line per message
 email-forensics analyze suspicious.eml --format html -o report.html --iocs iocs.json   # STIX 2.1
 email-forensics analyze suspicious.eml --iocs iocs.csv --fail-on suspicious
+VT_API_KEY=... email-forensics analyze suspicious.eml --enrich --doh --enrich-record case42-enrich.json
 email-forensics analyze --json --min-severity medium *.eml
 email-forensics analyze suspicious.eml --extract-dir ./case42/attachments
 email-forensics analyze suspicious.eml --protected-domain acme-corp.com --protected-domains-file partners.txt
@@ -118,6 +128,9 @@ Some findings are near-conclusive on their own and set a minimum score: an auto-
 | `MACRO_AUTOEXEC`, `MACRO_SUSPICIOUS`, `DOC_ACTIVEX`, `PDF_AUTO_ACTION`, `PDF_SUBMIT_FORM`, `PDF_REMOTE_GOTO`, `PDF_RICHMEDIA`, `PDF_OBFUSCATED_NAMES`, `LNK_LONG_ARGUMENTS`, `LNK_ICON_DISGUISE`, `LNK_HIDDEN_WINDOW`, `SCRIPT_EXECUTION`, `SCRIPT_OBFUSCATED` | medium | |
 | `DOC_REMOTE_IMAGE`, `PDF_XFA`, `PDF_ENCRYPTED`, `PDF_TRUNCATED` | low | |
 | `DOC_METADATA`, `PDF_LINKS`, `LNK_MACHINE_ID` | info | Attribution and context |
+| `ENRICH_KNOWN_MALWARE`, `ENRICH_URLHAUS_LISTED` | high | Hash/URL known to malware databases |
+| `ENRICH_NEW_DOMAIN`, `ENRICH_VT_DETECTIONS`, `ENRICH_ABUSIVE_IP` | high / medium | Newly registered domain; reputation hits |
+| `ENRICH_IP_ASN`, `ENRICH_ERRORS` | info | Network context; failed lookups |
 | `AUTHV_DKIM_BODY_MODIFIED` | high | Body no longer matches the DKIM body hash (works offline) |
 | `AUTHV_DKIM_FAIL`, `AUTHV_DMARC_FAIL`, `AUTHV_SPF_FAIL` | high (DMARC: medium if p=none) | Re-verification failed |
 | `AUTHV_DKIM_UNSIGNED_CONTENT` | high | Content after the `l=` limit is not covered by the signature |
@@ -177,6 +190,7 @@ Some findings are near-conclusive on their own and set a minimum score: an auto-
 ## Known limitations (planned)
 
 - SPF and DMARC are evaluated against **today's** DNS. Records may have changed since delivery, and DKIM keys are often rotated (a missing key is reported, not treated as forgery). `--dns-record` preserves exactly what was seen.
+- Enrichment answers describe the indicator **today**; record them (`--enrich-record`) at analysis time. Domain age is compared with the message date.
 - The bundled Public Suffix List is a snapshot (version in the file header); refresh it occasionally.
 - There is no trust boundary configuration yet. `Received` hops below your own MX can be forged by the sender.
 - **PST/OST** mailboxes are not read directly. Convert them first, e.g. `readpst -M -o out/ mailbox.pst` (from libpst/pst-utils), which writes mbox or `.eml` files, then analyse those.
@@ -219,6 +233,7 @@ Layout of `src/email_forensics/`:
 | `body` | Body orchestration and body findings |
 | `domains` | Shared domain helpers |
 | `analyzer` | Runs everything and builds the `Report` |
+| `enrich` | Opt-in enrichment providers, cache, recording/replay |
 | `scoring` | Score, verdict and reasons |
 | `report`, `report_html`, `iocs`, `cli` | Text/JSON/HTML output, IOC export (CSV/STIX/MISP), command line |
 

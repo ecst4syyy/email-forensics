@@ -125,7 +125,7 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | **6** ✅ | **Office / PDF / script payloads** | `oletools` (VBA macros, DDE, remote templates), PDF keyword scan (JS, OpenAction, EmbeddedFile, Launch), HTML/SVG attachment script detection |
 | **7** ✅ | **Additional input formats** | Outlook `.msg` (pure Python via the CFB reader), `.mbox` batch mode with `--summary`, nested `message/rfc822` / `.eml` / `.msg` recursion |
 | **8** ✅ | **Scoring & reporting** | Weighted risk score with explanations, HTML report, IOC export (CSV, STIX 2.1, MISP JSON) |
-| 9 | Enrichment (opt-in) | IP geolocation / ASN, WHOIS domain age, VirusTotal / URLhaus / AbuseIPDB hash & URL lookups with caching and rate limiting |
+| **9** ✅ | **Enrichment (opt-in)** | IP geolocation / ASN, WHOIS domain age, VirusTotal / URLhaus / AbuseIPDB hash & URL lookups with caching and rate limiting |
 | 10 | YARA & custom rules | YARA scanning of bodies and attachments, user-defined rules file (YAML) for header/body conditions |
 | 11 | Hardening | Fuzzing (Hypothesis / atheris), size and recursion limits, timeouts, malformed-corpus regression suite, performance on large mailboxes |
 | 12 | Case management | Case folders, chain-of-custody log, bulk ingest, search across a case, report signing |

@@ -117,6 +117,18 @@ def _to_text(report: Report) -> str:
         if av.dns_lookups:
             lines.append(f"dns    {len(av.dns_lookups)} lookup(s) recorded in the JSON report")
 
+    en = report.enrichment
+    if en is not None:
+        lines += ["", f"=== Enrichment ({', '.join(en.providers) or 'no providers'}) ==="]
+        for r in en.records:
+            if r.error:
+                lines.append(f"{r.provider:<13} {r.kind:<6} {safe_display(r.value)[:70]}  error: {safe_display(r.error)}")
+            else:
+                shown = ", ".join(f"{k}={v}" for k, v in r.summary.items() if v not in (None, "", [], False))
+                lines.append(f"{r.provider:<13} {r.kind:<6} {safe_display(r.value)[:70]}  {safe_display(shown)[:120]}")
+        for s_ in en.skipped:
+            lines.append(f"skipped: {safe_display(s_)}")
+
     b = report.body
     lines += ["", "=== MIME structure ==="]
     for part in b.parts:

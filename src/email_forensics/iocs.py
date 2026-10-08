@@ -39,7 +39,7 @@ def _ip_type(value: str) -> str | None:
         return None
 
 
-def extract_iocs(report: Report) -> list[Indicator]:
+def extract_iocs(report: Report, include_nested: bool = True) -> list[Indicator]:
     seen: dict[tuple[str, str, str], Indicator] = {}
 
     def add(itype: str, value: str | None, role: str, report: Report, context: str = "") -> None:
@@ -97,8 +97,9 @@ def extract_iocs(report: Report) -> list[Indicator]:
             if pa and pa.script:
                 for ip in pa.script.ips:
                     add(_ip_type(ip) or "ipv4", ip, "script-ip", r, f"in {a.filename}")
-        for n in r.nested:
-            walk(n.report)
+        if include_nested:
+            for n in r.nested:
+                walk(n.report)
 
     walk(report)
     return list(seen.values())

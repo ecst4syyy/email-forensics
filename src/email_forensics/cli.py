@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from . import __version__
 from .analyzer import AnalysisOptions, analyze_path
 from .loader import EvidenceError
 from .models import Severity
+from .enrich import Enricher, HttpFetcher, Recorder, ReplayFetcher
 from .iocs import extract_iocs, to_csv, to_misp, to_stix
 from .report import summary_row, to_json, to_summary, to_text
 from .report_html import render_html
@@ -49,6 +51,18 @@ def main(argv: list[str] | None = None) -> int:
     online.add_argument("--dns-replay", metavar="FILE", help="answer DNS only from a recording (offline, reproducible)")
     online.add_argument("--dns-record", metavar="FILE", help="save every DNS lookup made to FILE for later --dns-replay")
     online.add_argument("--spf-ip", metavar="IP", help="connecting IP to evaluate SPF for (default: from headers)")
+    enrich = analyze.add_argument_group("enrichment (opt-in; sends indicators to third parties, never files)")
+    enrich.add_argument("--enrich", action="store_true",
+                        help="look up indicators: RDAP always, Team Cymru ASN with DNS enabled, and VirusTotal / "
+                             "URLhaus / MalwareBazaar / AbuseIPDB when VT_API_KEY / ABUSE_CH_API_KEY / "
+                             "ABUSEIPDB_API_KEY are set")
+    enrich.add_argument("--enrich-providers", metavar="LIST",
+                        help="comma-separated subset: cymru,rdap,virustotal,urlhaus,malwarebazaar,abuseipdb")
+    enrich.add_argument("--enrich-cache", metavar="DIR", default=str(Path.home() / ".cache" / "email-forensics"),
+                        help="cache answers here for 24h (default %(default)s); --no-enrich-cache disables")
+    enrich.add_argument("--no-enrich-cache", action="store_true", help="do not read or write the cache")
+    enrich.add_argument("--enrich-record", metavar="FILE", help="save every enrichment request/answer to FILE")
+    enrich.add_argument("--enrich-replay", metavar="FILE", help="answer enrichment only from a recording (offline)")
     analyze.add_argument("--extract-dir", metavar="DIR",
                          help="write attachments to DIR as read-only <sha256>.bin files with a manifest.json")
 
@@ -73,8 +87,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     exit_code = 0
     outputs = []
+    try:
+        enricher = _make_enricher(args, resolver)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     options = AnalysisOptions(extract_dir=args.extract_dir, protected_domains=protected,
-                              resolver=resolver, spf_ip=args.spf_ip)
+                              resolver=resolver, spf_ip=args.spf_ip, enricher=enricher)
     for path in args.files:
         try:
             for report in analyze_path(path, options):
@@ -87,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if resolver is not None and args.dns_record:
         resolver.save(args.dns_record)
+    if enricher is not None and args.enrich_record:
+        enricher.fetcher.save(args.enrich_record)
 
     fmt = "json" if args.json else args.format
     if args.summary:
@@ -125,6 +146,17 @@ def _filter(report, min_rank: int) -> None:
     report.findings = [f for f in report.findings if f.severity.rank >= min_rank]
     for nested in report.nested:
         _filter(nested.report, min_rank)
+
+
+def _make_enricher(args, resolver) -> Enricher | None:
+    if not (args.enrich or args.enrich_replay):
+        if args.enrich_record or args.enrich_providers:
+            raise ValueError("--enrich-record/--enrich-providers need --enrich")
+        return None
+    fetcher = ReplayFetcher(args.enrich_replay) if args.enrich_replay else HttpFetcher()
+    cache = None if (args.no_enrich_cache or args.enrich_replay) else Path(args.enrich_cache) / "enrich"
+    providers = [p.strip() for p in args.enrich_providers.split(",") if p.strip()] if args.enrich_providers else None
+    return Enricher(Recorder(fetcher, cache), resolver=resolver, providers=providers)
 
 
 def _make_resolver(args) -> RecordingResolver | None:

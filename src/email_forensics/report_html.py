@@ -175,6 +175,16 @@ def _report(r: Report, level: int) -> str:
                    + (f'<p class="muted">{len(av.dns_lookups)} DNS lookup(s) are recorded in the JSON report.</p>'
                       if av.dns_lookups else "") + '</section>')
 
+    en = r.enrichment
+    if en is not None and (en.records or en.skipped):
+        rows = "".join(f'<tr><td>{esc(x.provider)}</td><td>{esc(x.kind)}</td><td><code>{esc(defang(x.value))}</code></td>'
+                       f'<td class="msg">{esc(x.error or ", ".join(f"{k}={v}" for k, v in x.summary.items() if v not in (None, "", [], False)))}'
+                       '</td></tr>' for x in en.records)
+        skipped = "".join(f"<li>{esc(x)}</li>" for x in en.skipped)
+        out.append(f'<section><h2>Enrichment</h2><div class="wrap"><table class="stack"><tr><th>Provider</th><th>Kind</th>'
+                   f'<th>Indicator</th><th>Result</th></tr>{rows}</table></div>'
+                   + (f'<p class="muted">Skipped:</p><ul class="muted">{skipped}</ul>' if skipped else "") + '</section>')
+
     if r.body.urls:
         rows = "".join(f'<tr><td><code>{esc(defang(u.url))}</code></td><td>{esc(", ".join(u.sources))}</td>'
                        f'<td>{esc(u.anchor_texts[0] if u.anchor_texts else "")}</td></tr>' for u in r.body.urls[:500])
