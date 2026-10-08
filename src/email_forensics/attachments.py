@@ -19,6 +19,7 @@ from .archives import inspect_archive, is_bomb
 from .html_analysis import analyze_html, html_findings
 from .mime import MimeTree, WalkedPart, decode_text
 from .models import ArchiveInfo, Attachment, Finding, Severity
+from .payloads import analyze_payload
 from .textcheck import invisible_char_findings, safe_display
 from .urls import collect_urls, url_findings
 
@@ -111,6 +112,8 @@ def _analyze_one(leaf: WalkedPart) -> tuple[Attachment, list[Finding]]:
     findings = _filename_findings(leaf, label, ev)
     findings += _risk_findings(att, detected, data, label, ev)
     findings += _type_mismatch_findings(att, detected, label, ev)
+    att.payload, payload_findings = analyze_payload(att, data, label)
+    findings += payload_findings
     if detected and (detected.category == "archive" or detected.id in ("jar", "apk")):
         att.archive = inspect_archive(data, detected)
         findings += _archive_findings(att.archive, len(data), label, ev)

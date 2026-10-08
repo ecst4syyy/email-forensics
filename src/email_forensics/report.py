@@ -128,6 +128,7 @@ def to_text(report: Report) -> str:
                              f"{', encrypted' if m.encrypted else ''})")
             if len(a.members) > MAX_TEXT_MEMBERS:
                 lines.append(f"      ... {len(a.members) - MAX_TEXT_MEMBERS} more")
+        lines += _payload_lines(att.payload)
         if att.extracted_to:
             lines.append(f"    extracted: {att.extracted_to}")
 
@@ -135,3 +136,51 @@ def to_text(report: Report) -> str:
     for f in report.findings:
         lines.append(f"[{f.severity.value.upper():<6}] {f.code}: {safe_display(f.message)}")
     return "\n".join(lines)
+
+
+def _payload_lines(pa) -> list[str]:
+    if pa is None:
+        return []
+    out = []
+    o = pa.office
+    if o:
+        if o.metadata:
+            out.append("    metadata: " + ", ".join(f"{k}={safe_display(v)}" for k, v in list(o.metadata.items())[:6]))
+        for m in o.vba:
+            tags = (["autoexec: " + ", ".join(m.autoexec)] if m.autoexec else []) + \
+                   ([f"{len(m.suspicious)} suspicious"] if m.suspicious else []) + (["STOMPED"] if m.stomped else [])
+            out.append(f"    vba {safe_display(m.name)} ({m.code_bytes}B){'  [' + '; '.join(tags) + ']' if tags else ''}")
+        if o.xlm_macros:
+            out.append(f"    xlm macros: {safe_display(o.xlm_macros[0][:80])}")
+        for d in o.dde[:3]:
+            out.append(f"    dde: {safe_display(d[:100])}")
+        for e in o.embedded[:5]:
+            out.append(f"    embedded: {safe_display(e.name or e.source)} ({e.size}B, {e.detected_type or 'unknown'})")
+        for e in o.external[:5]:
+            out.append(f"    external {e['type']}: {safe_display(e['target'][:100])}")
+        if o.rtf_object_classes:
+            out.append(f"    rtf objects: {', '.join(o.rtf_object_classes)}")
+    if pa.pdf:
+        p = pa.pdf
+        risky = {k: v for k, v in p.keywords.items() if k not in ("Page", "Annot")}
+        out.append(f"    pdf {p.version or '?'}: {p.streams} streams, keywords "
+                   + (", ".join(f"/{k}={v}" for k, v in risky.items()) or "none"))
+        for u in p.uris[:5]:
+            out.append(f"    pdf link: {safe_display(u[:120])}")
+        for j in p.javascript[:2]:
+            out.append(f"    pdf js: {safe_display(j[:100])}")
+    if pa.lnk:
+        lk = pa.lnk
+        out.append(f"    lnk target: {safe_display(lk.target or lk.env_target or lk.relative_path or '?')}")
+        if lk.arguments:
+            out.append(f"    lnk args: {safe_display(lk.arguments.strip()[:160])}")
+        if lk.machine_id:
+            out.append(f"    lnk created on: {safe_display(lk.machine_id)}")
+    if pa.script:
+        for k, v in pa.script.indicators.items():
+            out.append(f"    script {k}: {safe_display(', '.join(v[:4]))}")
+        for c in pa.script.decoded_commands[:2]:
+            out.append(f"    decoded: {safe_display(c[:160])}")
+    for e in pa.embedded[:5]:
+        out.append(f"    embedded: {e.source} ({e.size}B, {e.detected_type or 'unknown'})")
+    return out

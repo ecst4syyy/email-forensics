@@ -122,7 +122,7 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | **3** ✅ | **Attachments (static)** | Attachment extraction to a safe output dir, RFC 2231 filename anomalies, hashes, magic-byte type detection vs extension vs MIME type, double-extension & RTLO detection, risky types (`.html`, `.svg`, `.lnk`, `.iso`, `.one`), archive listing + zip-bomb guard |
 | **4** ✅ | **Sender-identity heuristics** | Lookalike / homoglyph domain detection (confusables + edit distance against a protected-domains list), `X-Mailer` / `User-Agent` fingerprinting, `Message-ID` analysis, provider-specific headers (Exchange/O365 `X-MS-*`, Gmail) |
 | **5** ✅ | **Authentication re-verification (opt-in online)** | DKIM signature verification (`dkimpy`), SPF evaluation for the first external hop IP (`pyspf`), DMARC policy + alignment, ARC chain validation, DNS lookup timestamps recorded in the report |
-| 6 | Office / PDF / script payloads | `oletools` (VBA macros, DDE, remote templates), PDF keyword scan (JS, OpenAction, EmbeddedFile, Launch), HTML/SVG attachment script detection |
+| **6** ✅ | **Office / PDF / script payloads** | `oletools` (VBA macros, DDE, remote templates), PDF keyword scan (JS, OpenAction, EmbeddedFile, Launch), HTML/SVG attachment script detection |
 | 7 | Additional input formats | Outlook `.msg` (`extract-msg`), `.mbox` batch mode, nested `message/rfc822` recursion |
 | 8 | Scoring & reporting | Weighted risk score with explanations, HTML report, IOC export (CSV, STIX 2.1, MISP JSON) |
 | 9 | Enrichment (opt-in) | IP geolocation / ASN, WHOIS domain age, VirusTotal / URLhaus / AbuseIPDB hash & URL lookups with caching and rate limiting |
@@ -130,6 +130,8 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | 11 | Hardening | Fuzzing (Hypothesis / atheris), size and recursion limits, timeouts, malformed-corpus regression suite, performance on large mailboxes |
 | 12 | Case management | Case folders, chain-of-custody log, bulk ingest, search across a case, report signing |
 | 13+ | UI / integrations | Web UI or TUI, REST API, SIEM/SOAR integration, PST ingestion (`libpff`) |
+
+Carried forward from Day 6: BIFF8 (.xls) XLM macros, PowerPoint binary VBA, PDF LZW/ASCII85 filters, QR-code decoding, VBA p-code disassembly.
 
 Carried forward from Day 4: full Unicode TR39 confusables table, newly-registered-domain checks (Day 9 enrichment), Google Workspace / Proofpoint / Mimecast verdict headers.
 

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .auth import AuthVerification
+    from .payloads import PayloadAnalysis
 
 
 class Severity(str, Enum):
@@ -214,6 +215,7 @@ class Attachment:
     detected_description: str | None = None
     archive: ArchiveInfo | None = None
     urls: list[UrlInfo] = field(default_factory=list)
+    payload: PayloadAnalysis | None = None
     extracted_to: str | None = None
 
 

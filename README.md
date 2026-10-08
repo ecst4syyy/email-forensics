@@ -2,7 +2,20 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 5 (authentication re-verification)
+## Status: Day 6 (Office, PDF and script payloads)
+
+**Day 6**
+- **Compound File (OLE2) reader** in pure Python (`cfb.py`), checked against olefile, used for legacy Office files and `vbaProject.bin`
+- **VBA macro extraction** (MS-OVBA decompression, `dir` stream parsing) with auto-exec entry points (AutoOpen, Document_Open, Workbook_Open, ...), suspicious calls (Shell, CreateObject, downloads, Win32 API, memory injection, obfuscation), IOCs and a source preview; flags **VBA stomping**. Checked against olevba, including a real Excel-made project
+- **OOXML**: Excel 4.0 (XLM) macro sheets and Auto_Open, **DDE** fields, ActiveX, embedded OLE packages (`Ole10Native`: the dropped file name and type), external relationships (remote OLE objects/frames, UNC paths that leak NTLM hashes, remote images), document metadata (author, last saved by, created, company)
+- **Legacy OLE**: SummaryInformation metadata, VBA, embedded packages
+- **RTF**: object classes tied to exploits (Equation Editor CVE-2017-11882, OLE2Link/htmlfile CVE-2017-0199) and embedded objects
+- **PDF**: keyword counts including inside compressed object streams, `#xx`-obfuscated names, JavaScript snippets and markers, auto-actions, Launch targets, link URIs, form submission, embedded files (hashed and typed)
+- **Windows shortcuts (LNK)**: target, arguments, icon, window state and the **NetBIOS name of the machine that created it**
+- **OneNote**: embedded files (HTA/scripts/executables)
+- **Scripts** (JS/VBS/PowerShell/batch/HTA/WSF/shell): downloader, execution, obfuscation, persistence, defense-evasion and ransomware indicators; **PowerShell `-EncodedCommand` is decoded** and analyzed
+- URLs found in documents, PDFs, macros, scripts and shortcuts go through the URL and lookalike checks
+- All parsers are bounded (sizes, counts, nesting, inflation) and were fuzzed with 60,000 corrupted payloads; pathological PDFs are regression-tested for time and memory
 
 **Day 5**
 - **DKIM verification** (RFC 6376 / RFC 8463): rsa-sha256, rsa-sha1, ed25519-sha256; simple/relaxed canonicalisation; `l=`, `i=`, `x=`, `t=`, key flags. **The body-hash check runs offline**, so even without DNS you learn whether the body was changed after signing
@@ -72,6 +85,14 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 | Code | Severity | Meaning |
 |---|---|---|
 | `HDR_DISPLAY_NAME_SPOOF` | high | Display name contains an address from a different domain than the real sender |
+| `MACRO_MALICIOUS_PATTERN`, `MACRO_STOMPED`, `MACRO_XLM`, `DOC_DDE`, `DOC_EXTERNAL_OBJECT`, `DOC_UNC_PATH`, `RTF_EXPLOIT_CLASS` | high | Office payload behaviour |
+| `PDF_JAVASCRIPT`, `PDF_LAUNCH` | high | Active PDF content |
+| `LNK_RUNS_COMMAND` | high | Shortcut launches PowerShell/cmd/mshta/... |
+| `SCRIPT_DOWNLOADER`, `SCRIPT_ENCODED_COMMAND`, `SCRIPT_PERSISTENCE`, `SCRIPT_DEFENSE_EVASION`, `SCRIPT_RANSOMWARE` | high | Script behaviour |
+| `DOC_EMBEDDED_OBJECT`, `PDF_EMBEDDED_FILE`, `ONENOTE_EMBEDDED_FILE` | high (risky type/name) / medium | Embedded files |
+| `MACRO_AUTOEXEC`, `MACRO_SUSPICIOUS`, `DOC_ACTIVEX`, `PDF_AUTO_ACTION`, `PDF_SUBMIT_FORM`, `PDF_REMOTE_GOTO`, `PDF_RICHMEDIA`, `PDF_OBFUSCATED_NAMES`, `LNK_LONG_ARGUMENTS`, `LNK_ICON_DISGUISE`, `LNK_HIDDEN_WINDOW`, `SCRIPT_EXECUTION`, `SCRIPT_OBFUSCATED` | medium | |
+| `DOC_REMOTE_IMAGE`, `PDF_XFA`, `PDF_ENCRYPTED`, `PDF_TRUNCATED` | low | |
+| `DOC_METADATA`, `PDF_LINKS`, `LNK_MACHINE_ID` | info | Attribution and context |
 | `AUTHV_DKIM_BODY_MODIFIED` | high | Body no longer matches the DKIM body hash (works offline) |
 | `AUTHV_DKIM_FAIL`, `AUTHV_DMARC_FAIL`, `AUTHV_SPF_FAIL` | high (DMARC: medium if p=none) | Re-verification failed |
 | `AUTHV_DKIM_UNSIGNED_CONTENT` | high | Content after the `l=` limit is not covered by the signature |
@@ -135,7 +156,9 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 - There is no trust boundary configuration yet. `Received` hops below your own MX can be forged by the sender.
 - Only `.eml` files are supported so far. `.msg` and `.mbox` support is planned for Day 7.
 - RAR / 7z / CAB / ISO contents are not listed (flagged as uninspected). Optional extras could add them later.
-- Office/PDF analysis is presence-based (VBA project exists, RTF has objects). Macro source extraction and PDF JavaScript/OpenAction analysis are planned for Day 6.
+- Excel 4.0 macros are detected in OOXML (`.xlsm`) but not in legacy binary `.xls` (BIFF8) workbooks; PowerPoint binary VBA is not extracted.
+- PDF analysis decodes FlateDecode only (not LZW/ASCIIHex/ASCII85 or encrypted streams); JavaScript is reported, never executed or deobfuscated.
+- QR codes in images/PDFs ("quishing") are not decoded.
 - Lookalike detection uses a practical subset of Unicode confusables, not the full TR39 table.
 - Provider verdict headers are only trustworthy if your own tenant or gateway added them. The tool reports them but can't verify who added them.
 - Hidden-text detection covers inline styles and the `hidden` attribute, not `<style>` class rules.
@@ -148,6 +171,8 @@ python tests/fixtures/build_attachments_fixture.py   # regenerate the (inert) at
 ```
 
 The DKIM/ARC fixtures in `tests/fixtures/dkim/` were signed by the independent dkimpy library (`tests/fixtures/build_dkim_fixtures.py`, development-only) so the verifier is tested against a reference implementation, not against itself.
+
+`tests/cfbwriter.py` builds compound files, VBA projects and OLE packages for tests; its output is checked with olefile/olevba when they are installed. `tests/fixtures/vba/` holds a real Excel-made VBA project (see its README).
 
 Test samples in `tests/samples.py` only imitate the structure of malicious files (headers, archive layout, markers). They contain no working code.
 
@@ -162,6 +187,7 @@ Layout of `src/email_forensics/`:
 | `psl`, `crypto`, `resolver` | Public Suffix List, RSA/Ed25519, pluggable and recordable DNS |
 | `dkimcheck`, `spf`, `dmarc`, `auth` | DKIM/ARC, SPF, DMARC, re-verification findings |
 | `brands`, `lookalike`, `mailer`, `identity` | Reference data, lookalike engine, mailer fingerprints, identity findings |
+| `cfb`, `vba`, `office`, `pdf`, `lnk`, `scripts`, `payloads` | Payload parsers and their findings |
 | `filetype`, `archives`, `attachments` | Magic-byte detection, bounded archive listing, attachment findings and extraction |
 | `body` | Body orchestration and body findings |
 | `domains` | Shared domain helpers |

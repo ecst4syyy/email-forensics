@@ -194,7 +194,8 @@ def _zip_subtype(data: bytes) -> FileType:
             names = set(zf.namelist()[:5000])
             if "mimetype" in names:
                 try:
-                    if zf.read("mimetype")[:100].startswith(b"application/vnd.oasis.opendocument"):
+                    if (zf.getinfo("mimetype").file_size < 200
+                            and zf.read("mimetype").startswith(b"application/vnd.oasis.opendocument")):
                         return ODF
                 except Exception:
                     pass
