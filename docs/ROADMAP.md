@@ -102,12 +102,12 @@ evidence →│  loader      │  hash original bytes, detect format (.eml/.msg/
           └──────┬───────┘
                  ▼
           ┌──────────────┐
-          │  reporters   │  text, JSON (later: HTML, PDF, STIX/MISP IOCs)
+          │  reporters   │  text, JSON, HTML, STIX/MISP/CSV IOCs, SIEM events
           └──────────────┘
 ```
 
 Design principles:
-- Core has **no required third-party dependencies**. Optional extras (`[auth]`, `[attachments]`, `[yara]`) add heavier libraries.
+- Core has **no required third-party dependencies**. Optional extras (`[dns]`, `[yara]`) add third-party libraries. In the end, DKIM/SPF/DMARC, OLE/VBA, `.msg` and the crypto were all implemented in pure Python, each checked against a reference library.
 - Each analyzer is a pure function: `(message) -> (data, findings)`. This makes them easy to test and to add.
 - Stable finding codes (e.g. `HDR_REPLY_TO_MISMATCH`) so downstream tooling and tests can depend on them.
 
@@ -129,19 +129,28 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | **10** ✅ | **YARA & custom rules** | YARA scanning of bodies and attachments, user-defined rules file (YAML) for header/body conditions |
 | **11** ✅ | **Hardening** | Fuzzing (Hypothesis / atheris), size and recursion limits, timeouts, malformed-corpus regression suite, performance on large mailboxes |
 | **12** ✅ | **Case management** | Case folders, chain-of-custody log, bulk ingest, search across a case, report signing |
-| 13+ | UI / integrations | Web UI or TUI, REST API, SIEM/SOAR integration, PST ingestion (`libpff`) |
+| **13** ✅ | **API & integrations** | REST API with upload page (`serve`), SIEM output (JSON Lines, CEF), drop-folder automation (`watch`), CI, version 1.0.0 |
 
-Carried forward from Day 7: native PST/OST reading (currently: convert with readpst), RTF de-encapsulation of HTML bodies in .msg.
+The plan was followed in order. Where the plan named a library (dkimpy, pyspf, oletools, YAML rules), the shipped version uses a stdlib implementation or JSON/TOML, so the core keeps zero required dependencies.
 
-Carried forward from Day 6: BIFF8 (.xls) XLM macros, PowerPoint binary VBA, PDF LZW/ASCII85 filters, QR-code decoding, VBA p-code disassembly.
+### Future work
 
-Carried forward from Day 4: full Unicode TR39 confusables table, newly-registered-domain checks (Day 9 enrichment), Google Workspace / Proofpoint / Mimecast verdict headers.
+Ingestion and formats
+- Native PST/OST reading (today: convert with `readpst`); RTF de-encapsulation of HTML bodies in `.msg`
+- RAR/7z/ISO/CAB listing via optional extras
+- BIFF8 (`.xls`) XLM macros, PowerPoint binary VBA, VBA p-code disassembly, PDF LZW/ASCII85 filters
 
-Carried forward from Day 3: RAR/7z/ISO listing via optional extras, ssdeep/TLSH similarity hashes, correlating attachment and body URLs into one IOC list.
+Detection
+- QR-code decoding in images and PDFs ("quishing")
+- The full Unicode TR39 confusables table
+- Google Workspace / Proofpoint / Mimecast verdict headers; configurable trust boundary (your own MX hops)
+- ssdeep/TLSH similarity hashes for attachment clustering
+- Rescoring with organisation feedback (false-positive / true-positive labels per finding)
 
-Carried forward from Day 2: done (Day 11: `<style>` class rules, text/html divergence; Day 5: Public Suffix List).
-
-We can reorder these as priorities change. Days 2–4 give the most value for phishing triage.
+Integrations
+- Mailbox connectors (IMAP, Microsoft Graph, Gmail API) for pulling reported messages
+- SOAR actions (TheHive, Splunk SOAR) and a MISP push client
+- Multi-user web UI with case browsing; worker pool for concurrent API requests
 
 ## 5. Definition of done (every day)
 

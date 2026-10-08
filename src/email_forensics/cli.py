@@ -3,12 +3,15 @@
     email-forensics analyze message.eml|message.msg|mailbox.mbox [options]
     email-forensics case init|add|analyze|report|search|verify|log CASE_DIR ...
     email-forensics verify-signature REPORT [--public-key HEX]
+    email-forensics serve [--host 127.0.0.1] [--port 8025]
+    email-forensics watch INBOX_DIR --output-dir OUT_DIR [--once]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -22,6 +25,7 @@ from .loader import EvidenceError
 from .models import Severity
 from .report import summary_row, to_json, to_summary, to_text
 from .report_html import render_html
+from .siem import to_cef, to_jsonl
 from .resolver import DohResolver, RecordingResolver, ReplayResolver, SystemResolver
 from .yara_scan import YaraUnavailable
 from .yara_scan import compile_rules as compile_yara
@@ -47,6 +51,10 @@ def main(argv: list[str] | None = None) -> int:
             ok = verify_signature(args.file, args.signature, args.public_key)
             print(f"{'valid' if ok else 'INVALID'} signature for {args.file}")
             return 0 if ok else 1
+        if args.command == "serve":
+            return _cmd_serve(args)
+        if args.command == "watch":
+            return _cmd_watch(args)
     except (UsageError, CaseError, RuleError, YaraUnavailable, ValueError, OSError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -64,7 +72,8 @@ def _parser() -> argparse.ArgumentParser:
 
     analyze = sub.add_parser("analyze", help="analyze .eml, .msg or mbox files")
     analyze.add_argument("files", nargs="+")
-    analyze.add_argument("--format", choices=["text", "json", "html"], default="text", help="report format")
+    analyze.add_argument("--format", choices=["text", "json", "html", "jsonl", "cef"], default="text",
+                         help="report format (jsonl/cef: one SIEM event per message)")
     analyze.add_argument("--json", action="store_true", help="same as --format json")
     analyze.add_argument("-o", "--output", metavar="FILE", help="write the report to FILE instead of stdout")
     analyze.add_argument("--iocs", metavar="FILE", help="also export indicators to FILE")
@@ -116,6 +125,26 @@ def _parser() -> argparse.ArgumentParser:
     vs.add_argument("file")
     vs.add_argument("--signature", help="signature file (default: FILE.sig)")
     vs.add_argument("--public-key", help="expected public key (hex); default: the key named in the signature")
+
+    serve = sub.add_parser("serve", help="run the local REST API and upload page")
+    serve.add_argument("--host", default="127.0.0.1",
+                       help="address to listen on (default %(default)s; others need an API token)")
+    serve.add_argument("--port", type=int, default=8025)
+    serve.add_argument("--max-upload", metavar="MB", type=float, default=50, help="largest accepted upload (MB)")
+    serve.add_argument("--token-file", metavar="FILE",
+                       help="read the API token from FILE (default: the EMAIL_FORENSICS_API_TOKEN variable)")
+    serve.add_argument("--quiet", action="store_true", help="do not log requests")
+    add_analysis_arguments(serve)
+
+    watch = sub.add_parser("watch", help="analyze every new file dropped into a folder")
+    watch.add_argument("inbox")
+    watch.add_argument("--output-dir", required=True, metavar="DIR",
+                       help="reports, events.jsonl and the processed-file list go here")
+    watch.add_argument("--report-format", choices=["json", "html", "text", "none"], default="json")
+    watch.add_argument("--interval", type=float, default=5.0, help="seconds between polls (default %(default)s)")
+    watch.add_argument("--once", action="store_true", help="process what is there now and exit")
+    watch.add_argument("--all-files", action="store_true", help="consider every file, not just .eml/.msg/.mbox")
+    add_analysis_arguments(watch)
     return parser
 
 
@@ -203,6 +232,10 @@ def _cmd_analyze(args) -> int:
     elif fmt == "json":
         text = to_json(outputs[0]) if len(outputs) == 1 else json.dumps([r.to_dict() for r in outputs],
                                                                          indent=2, ensure_ascii=False)
+    elif fmt == "jsonl":
+        text = to_jsonl(outputs)
+    elif fmt == "cef":
+        text = to_cef(outputs)
     else:
         text = "\n\n".join(to_text(r) for r in outputs)
     if args.output:
@@ -296,6 +329,54 @@ def _cmd_case(args) -> int:
                       f"{'  [signed]' if e.get('signature') else ''}")
         return 0
     raise UsageError(f"unknown case command {cmd}")
+
+
+# --------------------------------------------------------------------------- serve / watch
+
+
+def _cmd_serve(args) -> int:
+    from .server import TOKEN_ENV, ForensicsServer
+
+    if args.token_file:
+        with open(args.token_file, encoding="utf-8") as fh:
+            token = fh.read().strip()
+    else:
+        token = os.environ.get(TOKEN_ENV) or None
+    options = build_options(args)
+    server = ForensicsServer((args.host, args.port), options, token=token,
+                             max_upload=int(args.max_upload * 1024 * 1024), quiet=args.quiet)
+    host = f"[{args.host}]" if ":" in args.host else args.host
+    print(f"email-forensics API on http://{host}:{server.server_address[1]}/"
+          f"{' (token required)' if token else ''}; Ctrl-C to stop", file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+        save_recordings(args, options)
+    return 0
+
+
+def _cmd_watch(args) -> int:
+    from .watch import Watcher
+
+    def report(path, reports, error):
+        if error:
+            print(f"error: {path.name}: {error}", file=sys.stderr)
+        for r in reports:
+            a = r.assessment
+            print(f"{path.name}: {a.verdict if a else '?'} ({a.score if a else '?'}) {r.headers.subject or ''}"[:160],
+                  flush=True)
+
+    options = build_options(args)
+    watcher = Watcher(args.inbox, args.output_dir, options, args.report_format, all_files=args.all_files,
+                      on_report=report)
+    if not args.once:
+        print(f"watching {args.inbox} every {args.interval:g}s; Ctrl-C to stop", file=sys.stderr)
+    watcher.run(args.interval, once=args.once)
+    save_recordings(args, options)
+    return 0
 
 
 # --------------------------------------------------------------------------- helpers

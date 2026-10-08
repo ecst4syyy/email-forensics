@@ -9,6 +9,7 @@ report of its own).
 from __future__ import annotations
 
 import signal
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from email.message import EmailMessage
@@ -24,7 +25,8 @@ from .custom_rules import evaluate as evaluate_rules
 from .enrich import Enricher
 from .identity import analyze_identity
 from .iocs import extract_iocs
-from .loader import EvidenceError, _info, detect_format, iter_mbox, load_evidence, load_msg_bytes, parse_bytes
+from .loader import (EvidenceError, _info, detect_format, iter_mbox, load_bytes, load_evidence, load_msg_bytes,
+                     parse_bytes)
 from .mime import MESSAGE_TYPES, MimeTree, walk_mime
 from .models import (BodyAnalysis, EvidenceInfo, Finding, HeaderAnalysis, IdentityAnalysis, NestedReport, Report,
                      Severity)
@@ -72,11 +74,18 @@ def analyze_path(path: str | Path, options: AnalysisOptions | None = None) -> It
     yield analyze_with_timeout(evidence, raw, msg, options, msg_info)
 
 
+def analyze_bytes(label: str, data: bytes, options: AnalysisOptions | None = None) -> list[Report]:
+    """Analyze evidence held in memory (an upload): .eml, .msg or mbox bytes."""
+    options = options or AnalysisOptions()
+    return [analyze_with_timeout(e, raw, msg, options, info) for e, raw, msg, info in load_bytes(label, data)]
+
+
 def analyze_with_timeout(evidence: EvidenceInfo, raw: bytes, msg: EmailMessage, options: AnalysisOptions,
                          msg_info: MsgInfo | None = None) -> Report:
     """analyze_message with a wall-clock limit; a message that runs out of time still gets a
     (minimal) report so it is never silently dropped from a batch."""
-    if not options.timeout or not hasattr(signal, "setitimer"):
+    if (not options.timeout or not hasattr(signal, "setitimer")
+            or threading.current_thread() is not threading.main_thread()):  # signals: main thread only
         return analyze_message(evidence, raw, msg, options, msg_info)
 
     def on_alarm(signum, frame):

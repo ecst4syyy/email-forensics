@@ -28,6 +28,7 @@ from email_forensics.iocs import extract_iocs, to_csv, to_misp, to_stix  # noqa:
 from email_forensics.loader import EvidenceError, _info, load_msg_bytes, parse_bytes  # noqa: E402
 from email_forensics.report import to_text  # noqa: E402
 from email_forensics.report_html import render_html  # noqa: E402
+from email_forensics.siem import to_cef, to_jsonl  # noqa: E402
 from email_forensics.resolver import RecordingResolver, ReplayResolver  # noqa: E402
 
 
@@ -79,7 +80,7 @@ def run_one(name: str, data: bytes, options: AnalysisOptions):
     for text in (to_text(report), render_html([report]), json.dumps(report.to_dict(), ensure_ascii=False)):
         text.encode("utf-8", "backslashreplace")  # how the CLI writes reports
     iocs = extract_iocs(report)
-    for text in (to_csv(iocs), to_stix(iocs, [report]), to_misp(iocs, [report])):
+    for text in (to_csv(iocs), to_stix(iocs, [report]), to_misp(iocs, [report]), to_jsonl([report]), to_cef([report])):
         text.encode("utf-8")  # IOC files are strict UTF-8
     return report
 

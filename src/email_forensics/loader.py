@@ -8,6 +8,7 @@ before anything else; nothing is ever written back.
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 from collections.abc import Iterator
 from datetime import datetime, timezone
@@ -123,25 +124,47 @@ def iter_mbox(path: str | Path) -> Iterator[tuple[EvidenceInfo, bytes, EmailMess
         yield info, raw, parse_bytes(raw)
 
 
+def load_bytes(label: str, data: bytes) -> Iterator[tuple[EvidenceInfo, bytes, EmailMessage, MsgInfo | None]]:
+    """Like load_evidence/iter_mbox, for data already in memory (e.g. an API upload)."""
+    if data.startswith(CFB_SIGNATURE):
+        if not is_msg(data):
+            raise EvidenceError(f"{label} is an OLE compound file but not an Outlook message")
+        yield load_msg_bytes(label, data)
+        return
+    first_line = data[:65536].split(b"\n", 1)[0].rstrip(b"\r")
+    if first_line.startswith(b"From ") and _MBOX_FROM_RE.match(first_line):
+        container_sha = hashlib.sha256(data).hexdigest()
+        for index, raw in enumerate(_split_lines(io.BytesIO(data)), 1):
+            info = _info(f"{label}#{index}", raw, "mbox", container=f"{label} message {index}",
+                         container_sha256=container_sha)
+            yield info, raw, parse_bytes(raw), None
+        return
+    yield _info(label, data, "eml"), data, parse_bytes(data), None
+
+
 def _split_mbox(path: Path) -> Iterator[bytes]:
+    with open(path, "rb") as fh:
+        yield from _split_lines(fh)
+
+
+def _split_lines(fh) -> Iterator[bytes]:
     """Split on 'From ' separator lines and undo mboxrd '>From ' quoting."""
     current: list[bytes] | None = None
     size = 0
-    with open(path, "rb") as fh:
-        for line in fh:
-            if line.startswith(b"From ") and (current is None or _MBOX_FROM_RE.match(line.rstrip(b"\r\n"))
-                                              or line.rstrip(b"\r\n") == b"From "):
-                if current is not None:
-                    yield _finish(current)
-                current, size = [], 0
-                continue
-            if current is None:
-                current = []
-            if re.match(rb"^>+From ", line):
-                line = line[1:]
-            size += len(line)
-            if size <= MAX_MESSAGE_BYTES + 1:
-                current.append(line)
+    for line in fh:
+        if line.startswith(b"From ") and (current is None or _MBOX_FROM_RE.match(line.rstrip(b"\r\n"))
+                                          or line.rstrip(b"\r\n") == b"From "):
+            if current is not None:
+                yield _finish(current)
+            current, size = [], 0
+            continue
+        if current is None:
+            current = []
+        if re.match(rb"^>+From ", line):
+            line = line[1:]
+        size += len(line)
+        if size <= MAX_MESSAGE_BYTES + 1:
+            current.append(line)
     if current:
         yield _finish(current)
 
