@@ -1,4 +1,4 @@
-"""Command-line interface: ``email-forensics analyze message.eml``."""
+"""Command-line interface: ``email-forensics analyze message.eml|message.msg|mailbox.mbox``."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ import json
 import sys
 
 from . import __version__
-from .analyzer import analyze_file
+from .analyzer import AnalysisOptions, analyze_path
 from .loader import EvidenceError
 from .models import Severity
-from .report import to_json, to_text
+from .report import summary_row, to_json, to_summary, to_text
 from .resolver import DohResolver, RecordingResolver, ReplayResolver, SystemResolver
 
 
@@ -19,9 +19,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    analyze = sub.add_parser("analyze", help="analyze one or more .eml files")
+    analyze = sub.add_parser("analyze", help="analyze .eml, .msg or mbox files")
     analyze.add_argument("files", nargs="+")
     analyze.add_argument("--json", action="store_true", help="output JSON instead of text")
+    analyze.add_argument("--summary", action="store_true",
+                         help="one line per message instead of full reports (useful for mailboxes)")
     analyze.add_argument("--min-severity", choices=[s.value for s in Severity], default="info",
                          help="hide findings below this severity")
     analyze.add_argument("--protected-domain", metavar="DOMAIN", action="append", default=[],
@@ -62,20 +64,27 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     exit_code = 0
     outputs = []
+    options = AnalysisOptions(extract_dir=args.extract_dir, protected_domains=protected,
+                              resolver=resolver, spf_ip=args.spf_ip)
     for path in args.files:
         try:
-            report = analyze_file(path, extract_dir=args.extract_dir, protected_domains=protected,
-                                  resolver=resolver, spf_ip=args.spf_ip)
-        except EvidenceError as exc:
+            for report in analyze_path(path, options):
+                _filter(report, min_rank)
+                outputs.append(report)
+        except (EvidenceError, OSError) as exc:
             print(f"error: {path}: {exc}", file=sys.stderr)
             exit_code = 2
             continue
-        report.findings = [f for f in report.findings if f.severity.rank >= min_rank]
-        outputs.append(report)
 
     if resolver is not None and args.dns_record:
         resolver.save(args.dns_record)
 
+    if args.summary:
+        if args.json:
+            print(json.dumps([summary_row(r) for r in outputs], indent=2, ensure_ascii=False))
+        else:
+            print(to_summary(outputs))
+        return exit_code
     if args.json:
         if len(outputs) == 1:
             print(to_json(outputs[0]))
@@ -84,6 +93,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("\n\n".join(to_text(r) for r in outputs))
     return exit_code
+
+
+def _filter(report, min_rank: int) -> None:
+    report.findings = [f for f in report.findings if f.severity.rank >= min_rank]
+    for nested in report.nested:
+        _filter(nested.report, min_rank)
 
 
 def _make_resolver(args) -> RecordingResolver | None:

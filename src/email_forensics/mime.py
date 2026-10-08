@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import codecs
 import hashlib
+import io
 from dataclasses import dataclass, field
+from email import policy as email_policy
+from email.generator import BytesGenerator
 from email.message import Message
 
 from .models import Finding, MimePart, Severity
@@ -17,6 +20,17 @@ MAX_DEPTH = 20
 MAX_PARTS = 1000
 
 KNOWN_TRANSFER_ENCODINGS = {"7bit", "8bit", "binary", "base64", "quoted-printable"}
+MESSAGE_TYPES = ("message/rfc822", "message/global")
+
+
+def serialize(msg: Message) -> bytes:
+    """Re-serialise a parsed message, keeping original header text where possible."""
+    buf = io.BytesIO()
+    try:
+        BytesGenerator(buf, mangle_from_=False, policy=email_policy.compat32).flatten(msg)
+    except Exception:
+        return b""
+    return buf.getvalue()
 
 
 @dataclass
@@ -81,6 +95,16 @@ def _walk(part: Message, path: str, depth: int, tree: MimeTree) -> None:
             f"Part {path} has structural defects.",
             {"part": path, "defects": info.defects},
         ))
+
+    if info.content_type in MESSAGE_TYPES and part.is_multipart():
+        # An attached email is analysed as its own message (see analyzer), not as body parts.
+        inner = part.get_payload()
+        payload = serialize(inner[0]) if isinstance(inner, list) and inner else b""
+        info.size = len(payload)
+        info.sha256 = hashlib.sha256(payload).hexdigest()
+        info.is_attachment = True
+        tree.leaves.append(WalkedPart(info=info, message=part, payload=payload))
+        return
 
     if part.is_multipart():
         children = part.get_payload()

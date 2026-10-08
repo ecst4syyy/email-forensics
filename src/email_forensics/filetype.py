@@ -86,7 +86,9 @@ DOCUMENT_EXTENSIONS = frozenset("""
 _ISO_OFFSETS = (0x8001, 0x8801, 0x9001)
 _HTML_RE = re.compile(rb"^\s*(?:<!--.*?-->\s*)*<(?:!doctype\s+html|html|head|body|script|meta|iframe)[\s>]", re.I | re.S)
 _SVG_RE = re.compile(rb"^\s*(?:<\?xml[^>]*>\s*)?(?:<!--.*?-->\s*)*(?:<!doctype\s+svg[^>]*>\s*)?<svg[\s>]", re.I | re.S)
-_EML_RE = re.compile(rb"^(?:(?:Received|Return-Path|From|To|Subject|Date|Message-ID|MIME-Version|Delivered-To):[^\n]*\r?\n){2}", re.I)
+_EML_FIRST_RE = re.compile(rb"^[\x21-\x39\x3b-\x7e]{1,76}:")
+_EML_KNOWN_RE = re.compile(rb"^(?:Received|Return-Path|From|To|Cc|Subject|Date|Message-ID|MIME-Version|Delivered-To|"
+                           rb"Authentication-Results|DKIM-Signature|ARC-Seal|Reply-To|X-Mailer):", re.I | re.M)
 
 
 def extension_of(filename: str | None) -> str | None:
@@ -164,7 +166,7 @@ def detect(data: bytes) -> FileType | None:
             return SVG
         if _HTML_RE.match(text):
             return HTML
-        if _EML_RE.match(text):
+        if _EML_FIRST_RE.match(text) and len(_EML_KNOWN_RE.findall(text[:4096])) >= 2:
             return EML
     return None
 

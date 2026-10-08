@@ -180,3 +180,71 @@ def ole10native(filename: str, payload: bytes) -> bytes:
     inner = struct.pack("<H", 2) + name + path + struct.pack("<HH", 0, 3) + struct.pack("<I", len(temp)) + temp
     inner += struct.pack("<I", len(payload)) + payload
     return struct.pack("<I", len(inner)) + inner
+
+
+def _utf16(s: str) -> bytes:
+    return s.encode("utf-16-le")
+
+
+def _props_stream(header: bytes, fixed: list[tuple[int, int, bytes]]) -> bytes:
+    """__properties_version1.0: header + 16-byte entries (tag, flags, 8-byte value)."""
+    return header + b"".join(struct.pack("<II", (pid << 16) | ptype, 6) + value.ljust(8, b"\x00")[:8]
+                             for pid, ptype, value in fixed)
+
+
+def _filetime(epoch_seconds: int) -> bytes:
+    return struct.pack("<Q", (epoch_seconds + 11_644_473_600) * 10_000_000)
+
+
+def msg_streams(prefix: str, *, subject: str, body: str | None = None, html: bytes | None = None,
+                transport_headers: str | None = None, sender: tuple[str, str] | None = None,
+                recipients: list[tuple[str, str, int]] = (), attachments: list[dict] = (),
+                submit_time: int | None = None, rtf: bytes | None = None, embedded: bool = False) -> dict[str, bytes]:
+    """Streams for one MAPI message object rooted at `prefix` ("" for the top level)."""
+    p = f"{prefix}/" if prefix else ""
+    s: dict[str, bytes] = {}
+    s[p + "__substg1.0_001A001F"] = _utf16("IPM.Note")
+    s[p + "__substg1.0_0037001F"] = _utf16(subject)
+    if body is not None:
+        s[p + "__substg1.0_1000001F"] = _utf16(body)
+    if html is not None:
+        s[p + "__substg1.0_10130102"] = html
+    if rtf is not None:
+        s[p + "__substg1.0_10090102"] = rtf
+    if transport_headers is not None:
+        s[p + "__substg1.0_007D001F"] = _utf16(transport_headers)
+    if sender:
+        s[p + "__substg1.0_0C1A001F"] = _utf16(sender[0])
+        s[p + "__substg1.0_0C1F001F"] = _utf16(sender[1])
+        s[p + "__substg1.0_5D01001F"] = _utf16(sender[1])
+    fixed = []
+    if submit_time is not None:
+        fixed += [(0x0039, 0x0040, _filetime(submit_time)), (0x0E06, 0x0040, _filetime(submit_time + 5))]
+    header = (struct.pack("<8xIIII", len(recipients), len(attachments), len(recipients), len(attachments))
+              + (b"" if embedded else b"\x00" * 8))
+    s[p + "__properties_version1.0"] = _props_stream(header, fixed)
+    for i, (name, addr, rtype) in enumerate(recipients):
+        r = f"{p}__recip_version1.0_#{i:08X}/"
+        s[r + "__substg1.0_3001001F"] = _utf16(name)
+        s[r + "__substg1.0_39FE001F"] = _utf16(addr)
+        s[r + "__substg1.0_3003001F"] = _utf16(addr)
+        s[r + "__properties_version1.0"] = _props_stream(b"\x00" * 8, [(0x0C15, 0x0003, struct.pack("<I", rtype))])
+    for i, att in enumerate(attachments):
+        a = f"{p}__attach_version1.0_#{i:08X}/"
+        s[a + "__substg1.0_3707001F"] = _utf16(att["filename"])
+        s[a + "__substg1.0_3704001F"] = _utf16(att["filename"][:12])
+        if "message" in att:  # embedded .msg (attach method 5)
+            s[a + "__properties_version1.0"] = _props_stream(b"\x00" * 8, [(0x3705, 0x0003, struct.pack("<I", 5))])
+            s.update(msg_streams(a + "__substg1.0_3701000D", embedded=True, **att["message"]))
+        else:
+            s[a + "__substg1.0_370E001F"] = _utf16(att.get("mime", "application/octet-stream"))
+            s[a + "__substg1.0_37010102"] = att["data"]
+            s[a + "__properties_version1.0"] = _props_stream(b"\x00" * 8, [(0x3705, 0x0003, struct.pack("<I", 1))])
+    if not prefix:
+        for n in ("00020102", "00030102", "00040102"):
+            s[f"__nameid_version1.0/__substg1.0_{n}"] = b""
+    return s
+
+
+def build_msg(**kwargs) -> bytes:
+    return build_cfb(msg_streams("", **kwargs))

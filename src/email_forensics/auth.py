@@ -29,6 +29,7 @@ _TIME_NOTE = "DNS answers reflect today, not delivery time."
 class AuthVerification:
     online: bool = False
     resolver: str | None = None
+    reconstructed: bool = False
     dkim: list[DkimResult] = field(default_factory=list)
     arc: ArcResult | None = None
     spf: SpfResult | None = None
@@ -38,13 +39,19 @@ class AuthVerification:
 
 
 def verify_authentication(raw: bytes, msg: EmailMessage, h: HeaderAnalysis,
-                          resolver: RecordingResolver | None = None,
-                          spf_ip: str | None = None) -> tuple[AuthVerification, list[Finding]]:
-    av = AuthVerification(online=resolver is not None, resolver=resolver.name if resolver else None)
+                          resolver: RecordingResolver | None = None, spf_ip: str | None = None,
+                          reconstructed: bool = False) -> tuple[AuthVerification, list[Finding]]:
+    """`reconstructed`: the MIME was rebuilt (.msg) or re-serialised (attached message), so
+    DKIM failures are expected and must not be reported as tampering."""
+    av = AuthVerification(online=resolver is not None, resolver=resolver.name if resolver else None,
+                          reconstructed=reconstructed)
     findings: list[Finding] = []
 
     av.dkim = verify_dkim(raw, resolver)
-    findings += _dkim_findings(av.dkim, raw, online=resolver is not None)
+    if reconstructed:
+        findings += _reconstructed_dkim_findings(av.dkim)
+    else:
+        findings += _dkim_findings(av.dkim, raw, online=resolver is not None)
     arc = verify_arc(raw, resolver)
     if arc.instances:
         av.arc = arc
@@ -71,7 +78,8 @@ def verify_authentication(raw: bytes, msg: EmailMessage, h: HeaderAnalysis,
     av.dmarc = check_dmarc(resolver, from_domain, dkim_pass,
                            av.spf.result if av.spf else None, av.spf.domain if av.spf else None)
     findings += _dmarc_findings(av.dmarc)
-    findings += _compare_with_receiver(h, av)
+    if not reconstructed:
+        findings += _compare_with_receiver(h, av)
     av.dns_lookups = list(resolver.lookups)
     if any(lk.error for lk in resolver.lookups):
         errors = [f"{lk.type} {lk.name}: {lk.error}" for lk in resolver.lookups if lk.error]
@@ -179,6 +187,19 @@ def _dkim_findings(results: list[DkimResult], raw: bytes, online: bool) -> list[
         if r.expired:
             out.append(Finding("AUTHV_DKIM_EXPIRED", Severity.INFO,
                                f"{label} has passed its x= expiry ({r.expires_at}); normal for old evidence.", ev))
+    return out
+
+
+def _reconstructed_dkim_findings(results: list[DkimResult]) -> list[Finding]:
+    passed = [r for r in results if r.result == "pass"]
+    out = [Finding("AUTHV_DKIM_PASS", Severity.INFO, f"DKIM signature d={r.domain} s={r.selector} verified.",
+                   {"domain": r.domain, "selector": r.selector}) for r in passed]
+    if len(passed) < len(results):
+        out.append(Finding("AUTHV_DKIM_UNVERIFIABLE", Severity.INFO,
+                           "The analysed MIME was rebuilt from an Outlook .msg or re-serialised from a parent "
+                           "message, so DKIM signatures that do not verify say nothing about tampering. "
+                           "Obtain the original .eml from the mail server to verify them.",
+                           {"signatures": [f"d={r.domain} s={r.selector}: {r.result}" for r in results]}))
     return out
 
 

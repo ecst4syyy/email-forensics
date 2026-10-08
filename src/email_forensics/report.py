@@ -15,15 +15,26 @@ def to_json(report: Report) -> str:
     return json.dumps(report.to_dict(), indent=2, ensure_ascii=False)
 
 
-def to_text(report: Report) -> str:
+def to_text(report: Report, indent: str = "") -> str:
+    text = _to_text(report)
+    for n in report.nested:
+        title = f"=== Attached message {n.part}{' ' + repr(safe_display(n.filename)) if n.filename else ''} ==="
+        text += "\n\n" + title + "\n" + to_text(n.report, "    ")
+    return "\n".join(indent + line if line else line for line in text.splitlines())
+
+
+def _to_text(report: Report) -> str:
     e, h = report.evidence, report.headers
     lines = [
         "=== Evidence ===",
-        f"File:      {e.path}",
+        f"File:      {safe_display(e.path)}",
+        f"Format:    {e.format}{' (MIME rebuilt/re-serialised for analysis)' if e.converted else ''}",
         f"Size:      {e.size} bytes",
         f"SHA-256:   {e.sha256}",
         f"MD5:       {e.md5}",
         f"Analyzed:  {e.analyzed_at.isoformat()} (tool v{e.tool_version})",
+        *([f"Container: {safe_display(e.container)} (sha256 {e.container_sha256})"] if e.container else []),
+        *[f"Note:      {safe_display(n)}" for n in e.notes],
         "",
         "=== Summary ===",
         f"Subject:     {safe_display(h.subject) or '-'}",
@@ -52,6 +63,17 @@ def to_text(report: Report) -> str:
     for r in h.auth_results:
         props = " ".join(f"{k}={v}" for k, v in r.properties.items())
         lines.append(f"{r.method:<6} {r.result:<9} {props}  [{r.authserv_id}]")
+
+    if report.msg is not None:
+        m = report.msg
+        lines += ["", "=== Outlook .msg properties ==="]
+        for label, value in (("Message class", m.message_class), ("Submitted", m.submit_time),
+                             ("Delivered", m.delivery_time), ("Created", m.creation_time),
+                             ("Last modified", m.last_modified_time), ("Modified by", m.last_modified_by),
+                             ("Sender SMTP", m.sender_smtp)):
+            if value:
+                lines.append(f"{label + ':':<15}{safe_display(value)}")
+        lines.append(f"{'Transport hdrs:':<15}{'yes' if m.has_transport_headers else 'NO (headers rebuilt from properties)'}")
 
     ident = report.identity
     lines += ["", "=== Sender identity ==="]
@@ -184,3 +206,29 @@ def _payload_lines(pa) -> list[str]:
     for e in pa.embedded[:5]:
         out.append(f"    embedded: {e.source} ({e.size}B, {e.detected_type or 'unknown'})")
     return out
+
+
+def summary_row(report: Report) -> dict:
+    counts = {s: 0 for s in ("high", "medium", "low")}
+    for f in report.findings:
+        if f.severity.value in counts:
+            counts[f.severity.value] += 1
+    h = report.headers
+    return {
+        "evidence": report.evidence.path, "sha256": report.evidence.sha256, "date": h.date.isoformat() if h.date else None,
+        "from": h.from_address, "subject": h.subject, "attachments": len(report.attachments),
+        "nested": len(report.nested), **counts,
+        "top": [f.code for f in report.findings if f.severity.value == "high"][:5],
+    }
+
+
+def to_summary(reports: list[Report]) -> str:
+    lines = [f"{'#':>4}  {'HIGH':>4} {'MED':>4} {'LOW':>4}  {'DATE':<16}  {'FROM':<32}  SUBJECT"]
+    for i, r in enumerate(reports, 1):
+        row = summary_row(r)
+        date = (row["date"] or "-")[:16]
+        lines.append(f"{i:>4}  {row['high']:>4} {row['medium']:>4} {row['low']:>4}  {date:<16}  "
+                     f"{safe_display(row['from'] or '-')[:32]:<32}  {safe_display(row['subject'] or '-')[:60]}")
+    total_high = sum(1 for r in reports if any(f.severity.value == "high" for f in r.findings))
+    lines.append(f"\n{len(reports)} message(s), {total_high} with high-severity findings")
+    return "\n".join(lines)

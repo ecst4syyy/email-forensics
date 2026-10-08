@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .auth import AuthVerification
+    from .msg import MsgInfo
     from .payloads import PayloadAnalysis
 
 
@@ -47,6 +48,11 @@ class EvidenceInfo:
     md5: str
     analyzed_at: datetime
     tool_version: str
+    format: str = "eml"  # eml, msg, mbox, attached (message inside another message)
+    converted: bool = False  # the analysed MIME was rebuilt (from .msg) or re-serialised
+    container: str | None = None  # e.g. the mbox file and index, or the parent message part
+    container_sha256: str | None = None
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -239,10 +245,21 @@ class Report:
     attachments: list[Attachment] = field(default_factory=list)
     identity: IdentityAnalysis = field(default_factory=IdentityAnalysis)
     auth: AuthVerification | None = None
+    msg: MsgInfo | None = None
+    nested: list[NestedReport] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return _jsonable(asdict(self))
+
+
+@dataclass
+class NestedReport:
+    """An email attached to the analysed email, analysed in full."""
+
+    part: str
+    filename: str | None
+    report: Report
 
 
 def _jsonable(value: Any) -> Any:

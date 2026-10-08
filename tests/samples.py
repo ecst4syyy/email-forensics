@@ -244,3 +244,67 @@ JS_DROPPER = (b'var sh = new ActiveXObject("WScript.Shell");\n'
 BAT_RANSOM = b"@echo off\r\nvssadmin delete shadows /all /quiet\r\npowershell -ep bypass -c \"Set-MpPreference -DisableRealtimeMonitoring $true\"\r\n"
 PS1_ENCODED = ("powershell.exe -NoP -NonInteractive -W Hidden -Enc "
                + _b64.b64encode(POWERSHELL_STAGER.encode("utf-16-le")).decode()).encode()
+
+
+# --------------------------------------------------------------------------- Day 7 samples
+
+from cfbwriter import build_msg  # noqa: E402
+
+TRANSPORT_HEADERS = (
+    "Received: from mail.evil.test (mail.evil.test [81.2.69.160])\r\n by mx.corp.test with ESMTPS id 1;\r\n"
+    " Tue, 22 Sep 2026 10:00:05 +0000\r\n"
+    "Authentication-Results: mx.corp.test; spf=fail smtp.mailfrom=evil.test;\r\n dmarc=fail header.from=paypal.com\r\n"
+    "From: PayPal <service@paypal.com>\r\n"
+    "Reply-To: billing@paypa1-support.test\r\n"
+    "To: Bob <bob@corp.test>\r\n"
+    "Subject: Your account is limited\r\n"
+    "Date: Tue, 22 Sep 2026 10:00:00 +0000\r\n"
+    "Message-ID: <phish1@evil.test>\r\n"
+    "MIME-Version: 1.0\r\n"
+    "Content-Type: multipart/alternative; boundary=\"orig\"\r\n"
+)
+
+
+def phish_msg() -> bytes:
+    return build_msg(
+        subject="Your account is limited", transport_headers=TRANSPORT_HEADERS,
+        body="Verify now: https://paypa1-support.test/login",
+        html=b'<html><body><a href="https://paypa1-support.test/login">https://www.paypal.com</a></body></html>',
+        sender=("PayPal", "service@paypal.com"), recipients=[("Bob", "bob@corp.test", 1)],
+        attachments=[{"filename": "Invoice.pdf.exe", "mime": "application/octet-stream", "data": fake_pe()}],
+        submit_time=1_790_071_200,
+    )
+
+
+def sent_item_msg() -> bytes:
+    """A message without transport headers (e.g. from Sent Items), embedding another message."""
+    inner = dict(subject="Original phish", transport_headers=TRANSPORT_HEADERS,
+                 body="Verify now: https://paypa1-support.test/login", sender=("PayPal", "service@paypal.com"))
+    return build_msg(
+        subject="FW: suspicious", body="Please check the attached message.",
+        sender=("Bob", "bob@corp.test"),
+        recipients=[("SOC", "soc@corp.test", 1), ("Alice", "alice@corp.test", 2)],
+        attachments=[{"filename": "Original phish.msg", "message": inner}],
+        submit_time=1_790_074_800,
+    )
+
+
+def forwarded_eml() -> bytes:
+    """A user-reported phish: the suspicious message attached as message/rfc822."""
+    import email.policy
+    from email.message import EmailMessage
+    inner = (b"Received: from vps.evil.test (vps.evil.test [81.2.69.160]) by mx.corp.test; Tue, 22 Sep 2026 10:00:05 +0000\r\n"
+             b"From: \"IT Helpdesk\" <helpdesk@corp-test-support.test>\r\nTo: bob@corp.test\r\n"
+             b"Subject: Password expires today\r\nDate: Tue, 22 Sep 2026 10:00:00 +0000\r\nMessage-ID: <x@evil.test>\r\n"
+             b"Content-Type: text/html\r\n\r\n"
+             b'<a href="http://203.0.113.9/owa/login">https://mail.corp.test/owa</a>\r\n')
+    outer = EmailMessage(policy=email.policy.default)
+    outer["From"] = "bob@corp.test"
+    outer["To"] = "soc@corp.test"
+    outer["Subject"] = "Fwd: Password expires today"
+    outer["Date"] = "Tue, 22 Sep 2026 11:00:00 +0000"
+    outer["Message-ID"] = "<fwd@corp.test>"
+    outer.set_content("Is this legit?")
+    from email.parser import BytesParser
+    outer.add_attachment(BytesParser(policy=email.policy.default).parsebytes(inner))
+    return outer.as_bytes()

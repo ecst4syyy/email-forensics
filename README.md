@@ -2,7 +2,14 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 6 (Office, PDF and script payloads)
+## Status: Day 7 (input formats)
+
+**Day 7**
+- **Outlook `.msg`** files (pure Python, via the CFB reader): original internet headers from `PR_TRANSPORT_MESSAGE_HEADERS`, plain/HTML/compressed-RTF (LZFu) bodies, recipients, attachments and embedded messages are rebuilt as MIME and analysed like any email. `.msg` metadata (submit/delivery/creation/modification times, last modified by) is reported. Messages without transport headers (sent items, drafts) get headers rebuilt from MAPI properties, and the report says so
+- **mbox** mailboxes: every message is analysed as its own evidence item (`file.mbox#N`, own hashes, plus the whole mailbox's SHA-256). `--summary` prints one line per message
+- **Attached emails** (`message/rfc822`, `.eml` and `.msg` attachments) are analysed recursively into **nested reports** (up to 3 levels), so a phish a user forwarded as an attachment gets a full analysis of its own. `NESTED_MESSAGE_SUSPICIOUS` carries the worst inner finding up to the outer report
+- DKIM failures in rebuilt or re-serialised MIME are reported as `AUTHV_DKIM_UNVERIFIABLE`, never as tampering. Attached messages are re-serialised faithfully enough that their DKIM signatures usually still verify
+- Fuzzed with 28,000 corrupted `.msg` files; damaged input is either analysed or cleanly rejected
 
 **Day 6**
 - **Compound File (OLE2) reader** in pure Python (`cfb.py`), checked against olefile, used for legacy Office files and `vbaProject.bin`
@@ -69,6 +76,8 @@ A tool for forensic analysis of email: headers, bodies and attachments. We build
 ```bash
 pip install -e ".[dev]"
 email-forensics analyze suspicious.eml
+email-forensics analyze reported.msg                      # Outlook messages
+email-forensics analyze export.mbox --summary             # one line per message
 email-forensics analyze --json --min-severity medium *.eml
 email-forensics analyze suspicious.eml --extract-dir ./case42/attachments
 email-forensics analyze suspicious.eml --protected-domain acme-corp.com --protected-domains-file partners.txt
@@ -85,6 +94,8 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 | Code | Severity | Meaning |
 |---|---|---|
 | `HDR_DISPLAY_NAME_SPOOF` | high | Display name contains an address from a different domain than the real sender |
+| `NESTED_MESSAGE_SUSPICIOUS` | worst severity inside | An attached email has notable findings (see its nested report) |
+| `NESTED_MESSAGE`, `MSG_SOURCE`, `MSG_LAST_MODIFIED_BY`, `AUTHV_DKIM_UNVERIFIABLE` | info | Input-format context |
 | `MACRO_MALICIOUS_PATTERN`, `MACRO_STOMPED`, `MACRO_XLM`, `DOC_DDE`, `DOC_EXTERNAL_OBJECT`, `DOC_UNC_PATH`, `RTF_EXPLOIT_CLASS` | high | Office payload behaviour |
 | `PDF_JAVASCRIPT`, `PDF_LAUNCH` | high | Active PDF content |
 | `LNK_RUNS_COMMAND` | high | Shortcut launches PowerShell/cmd/mshta/... |
@@ -154,7 +165,8 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 - SPF and DMARC are evaluated against **today's** DNS. Records may have changed since delivery, and DKIM keys are often rotated (a missing key is reported, not treated as forgery). `--dns-record` preserves exactly what was seen.
 - The bundled Public Suffix List is a snapshot (version in the file header); refresh it occasionally.
 - There is no trust boundary configuration yet. `Received` hops below your own MX can be forged by the sender.
-- Only `.eml` files are supported so far. `.msg` and `.mbox` support is planned for Day 7.
+- **PST/OST** mailboxes are not read directly. Convert them first, e.g. `readpst -M -o out/ mailbox.pst` (from libpst/pst-utils), which writes mbox or `.eml` files, then analyse those.
+- `.msg` conversion keeps the original headers but rebuilds the MIME body, so DKIM can't be verified on `.msg` evidence; get the original `.eml` from the server when authentication matters.
 - RAR / 7z / CAB / ISO contents are not listed (flagged as uninspected). Optional extras could add them later.
 - Excel 4.0 macros are detected in OOXML (`.xlsm`) but not in legacy binary `.xls` (BIFF8) workbooks; PowerPoint binary VBA is not extracted.
 - PDF analysis decodes FlateDecode only (not LZW/ASCIIHex/ASCII85 or encrypted streams); JavaScript is reported, never executed or deobfuscated.
@@ -172,7 +184,7 @@ python tests/fixtures/build_attachments_fixture.py   # regenerate the (inert) at
 
 The DKIM/ARC fixtures in `tests/fixtures/dkim/` were signed by the independent dkimpy library (`tests/fixtures/build_dkim_fixtures.py`, development-only) so the verifier is tested against a reference implementation, not against itself.
 
-`tests/cfbwriter.py` builds compound files, VBA projects and OLE packages for tests; its output is checked with olefile/olevba when they are installed. `tests/fixtures/vba/` holds a real Excel-made VBA project (see its README).
+`tests/cfbwriter.py` builds compound files, VBA projects, OLE packages and Outlook `.msg` files for tests; its output was validated with olefile, olevba and extract-msg. `tests/fixtures/vba/` holds a real Excel-made VBA project (see its README).
 
 Test samples in `tests/samples.py` only imitate the structure of malicious files (headers, archive layout, markers). They contain no working code.
 
@@ -180,7 +192,8 @@ Layout of `src/email_forensics/`:
 
 | Module | Role |
 |---|---|
-| `loader` | Read evidence, hash it, parse it |
+| `loader` | Read evidence, hash it, detect format (.eml/.msg/mbox), parse it |
+| `msg` | Outlook .msg to MIME (MAPI properties, LZFu RTF) |
 | `headers` → `rules` | Header extraction → header findings |
 | `mime` | MIME tree walk, safe decoding |
 | `html_analysis`, `urls`, `textcheck` | HTML, URL and Unicode analysis |
