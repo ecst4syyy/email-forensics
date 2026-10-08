@@ -1,0 +1,50 @@
+{
+  "resolver": "fixture",
+  "lookups": [
+    {
+      "name": "arc._domainkey.forwarder1.test",
+      "type": "TXT",
+      "answers": [
+        "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvBXSglcFliQfriWuy2Ynp3pL7RPgmAEnzkmxX//B7UzizMcULcQZbhSd9KgZIhr+P3sUg+lHJ2PgTS0yodanb2ofNRgOqKzFsILv7KtO4qf68KY44B4xk6LC3X+Yy/gEfwKfpdoTi4HLVUKYVZhLt+P9A7gLcxAVolnDBQeG/kktgCeSqjx2IdkqbNE+2RRsUbe3GTqEhX4F5aB3OzxUlREVob2Pec6Vw5tXAt0L/A33NppS0oVqt5DxvD9xi5Dci25aRb2y1WHuIS7UWZ9sQiP6/C+nvZFcagM4KtI+QVfFxZLLoTt/bvNNWsaeVPRVSjGCqiadCQtajIIlQ2AggwIDAQAB"
+      ],
+      "error": null,
+      "at": "2026-10-08T00:00:00+00:00"
+    },
+    {
+      "name": "arc._domainkey.forwarder2.test",
+      "type": "TXT",
+      "answers": [
+        "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAj6GeCUP5JxSn220t/ggu4F7LSB6oEQUYchcTZxkbMaHxeW0UzNWORMFLOFdmE/n0mSXH9DNwFup6BSps96MCAZMBv75P5QKrnTZYZQDlkx6LCuR4ax8+1fuEhxnGPc4ts1B8Uq86VabfWRNMVsO67JMI+3XNJ2fyb5d8jml6/ASYIFjlsdUKcVrjqtAPPvZHigtyYDsGngjb99F0iNseNjC8meYaeQbxcj9g37YNE+JT7RFaQwyAPglJqi8prGhrJEXFgfxAPSFCigPlSAPRlTWHbOrkLQBTHl4dymdBS2OakRFpktQsumoIiiZW58+mu+oCRGQYXfq35HDEOMtTOwIDAQAB"
+      ],
+      "error": null,
+      "at": "2026-10-08T00:00:00+00:00"
+    },
+    {
+      "name": "ed._domainkey.signer.test",
+      "type": "TXT",
+      "answers": [
+        "v=DKIM1; k=ed25519; p=U4BOPmR/RYV2OkHpiVgA4Vh/e9Ju6g0VC17SpiBXtIM="
+      ],
+      "error": null,
+      "at": "2026-10-08T00:00:00+00:00"
+    },
+    {
+      "name": "old._domainkey.signer.test",
+      "type": "TXT",
+      "answers": [
+        "v=DKIM1; k=rsa; t=y; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC9uAQr4wqMGqYGxM8QSNtwtcTXs1Yvl6q6zqPWboix8WoQvB6lYHccCH5Pp5T0dUfhJiBak4PsqPlDzSxmnQtm40KX4KMsbescZKS2aydda+JESWVJ4SbxUL6gIbUuMCueYEgILt838Ctny29scDO2Px565cuISLM5vO+upVYzHQIDAQAB"
+      ],
+      "error": null,
+      "at": "2026-10-08T00:00:00+00:00"
+    },
+    {
+      "name": "s2048._domainkey.signer.test",
+      "type": "TXT",
+      "answers": [
+        "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr1CbU7okZ1+xqnmeI7lojJNIAdF55RatuKk8KS1Gbw2bm4qcY8eLubo6iCBhRA5Yvpp+Wqee+uC0hv/fgBNXwO3+edfihlLOdO56joIm9WBYNmButKjqbgCmHpwsE4LjsI8wRnCKQLAHATvAip7rAzdzdEnzr6vkDWK5ziEUEAsWTMotrEhvdi7t7n9UOKXxkHBYGsRO+j88xkH2v7+iBxwctSDT6qrJmGT3MBdHcl9I6mvAUqCSaCB8quk/fw6qwl8s/tPEa9PVHlDZEiNyrQkCLTrU8b9G0qmLD61HImQrZ8vfBOIUOHb+sptKdKltIXPS9RwBsUwcoxKJN5vV2QIDAQAB"
+      ],
+      "error": null,
+      "at": "2026-10-08T00:00:00+00:00"
+    }
+  ]
+}

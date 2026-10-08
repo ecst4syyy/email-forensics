@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .auth import AuthVerification
 
 
 class Severity(str, Enum):
@@ -233,6 +236,7 @@ class Report:
     body: BodyAnalysis = field(default_factory=BodyAnalysis)
     attachments: list[Attachment] = field(default_factory=list)
     identity: IdentityAnalysis = field(default_factory=IdentityAnalysis)
+    auth: AuthVerification | None = None
     findings: list[Finding] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

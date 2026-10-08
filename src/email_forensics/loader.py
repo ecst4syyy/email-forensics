@@ -21,6 +21,12 @@ class EvidenceError(Exception):
 
 
 def load_eml(path: str | Path) -> tuple[EvidenceInfo, EmailMessage]:
+    info, _, msg = load_evidence(path)
+    return info, msg
+
+
+def load_evidence(path: str | Path) -> tuple[EvidenceInfo, bytes, EmailMessage]:
+    """Read evidence once; return integrity info, the exact raw bytes and the parsed message."""
     path = Path(path)
     if not path.is_file():
         raise EvidenceError(f"not a file: {path}")
@@ -37,7 +43,7 @@ def load_eml(path: str | Path) -> tuple[EvidenceInfo, EmailMessage]:
         analyzed_at=datetime.now(timezone.utc),
         tool_version=__version__,
     )
-    return info, parse_bytes(raw)
+    return info, raw, parse_bytes(raw)
 
 
 def parse_bytes(raw: bytes) -> EmailMessage:

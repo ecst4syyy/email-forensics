@@ -67,6 +67,26 @@ def to_text(report: Report) -> str:
     for provider, verdict in ident.provider_verdicts.items():
         lines.append(f"{provider + ':':<19}" + " ".join(f"{k}={safe_display(v)}" for k, v in verdict.items()))
 
+    av = report.auth
+    if av is not None:
+        lines += ["", f"=== Authentication re-verified ({'online via ' + av.resolver if av.online else 'offline'}) ==="]
+        for d in av.dkim:
+            body = {True: "body ok", False: "BODY MODIFIED", None: "body ?"}[d.body_hash_ok]
+            lines.append(f"dkim   {d.result:<9} d={d.domain} s={d.selector} {d.algorithm} {body}"
+                         f"{f' key={d.key_bits}b' if d.key_bits else ''}  ({d.reason})")
+        if not av.dkim:
+            lines.append("dkim   (no signatures)")
+        if av.arc:
+            lines.append(f"arc    {av.arc.result:<9} {av.arc.instances} instance(s)  ({av.arc.reason})")
+        if av.spf:
+            lines.append(f"spf    {av.spf.result:<9} ip={av.spf.ip} [{av.spf_ip_source}] domain={av.spf.domain}"
+                         f"  ({av.spf.reason})")
+        if av.dmarc:
+            lines.append(f"dmarc  {av.dmarc.result:<9} from={av.dmarc.from_domain} policy={av.dmarc.policy}"
+                         f"  ({av.dmarc.reason})")
+        if av.dns_lookups:
+            lines.append(f"dns    {len(av.dns_lookups)} lookup(s) recorded in the JSON report")
+
     b = report.body
     lines += ["", "=== MIME structure ==="]
     for part in b.parts:

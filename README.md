@@ -2,7 +2,17 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 4 (sender identity)
+## Status: Day 5 (authentication re-verification)
+
+**Day 5**
+- **DKIM verification** (RFC 6376 / RFC 8463): rsa-sha256, rsa-sha1, ed25519-sha256; simple/relaxed canonicalisation; `l=`, `i=`, `x=`, `t=`, key flags. **The body-hash check runs offline**, so even without DNS you learn whether the body was changed after signing
+- **ARC chain validation** (RFC 8617): structure offline, seals and newest AMS online
+- **SPF evaluation** (RFC 7208) with include/redirect/a/mx/ptr/exists/ip4/ip6, macros, and the 10-lookup and 2-void-lookup limits. The connecting IP comes from `Received-SPF`, then the receiver's Authentication-Results comment, then the hop chain (or `--spf-ip`)
+- **DMARC** (RFC 7489): policy discovery with organisational-domain fallback, `sp=`, `pct=`, strict/relaxed alignment
+- **Comparison with the receiver's verdict**: `dkim=pass` at delivery that fails now means the message was altered after delivery (or the key replaced)
+- **Public Suffix List** bundled (`src/email_forensics/data/`), replacing the approximate organisational-domain rule everywhere
+- Pure-Python RSA and Ed25519 (`crypto.py`), checked against RFC 8032 vectors and the `cryptography` library. The core still needs no third-party packages
+- **DNS is opt-in and reproducible**: `--online` (dnspython), `--doh` (DNS-over-HTTPS, stdlib), `--dns-record FILE` saves every answer with a timestamp, `--dns-replay FILE` reproduces a report offline
 
 **Day 4**
 - **Lookalike domains** for From / Reply-To / Return-Path / Sender and every URL host (body and HTML attachments): homoglyphs (`paypa1`, `rnicrosoft`, Cyrillic `аррӏе`), typos (`microsfot`), combosquatting (`paypal-secure`, `secure-paypa1`), brand in a subdomain (`paypal.com.evil.net`), mixed-script labels, and TLD swaps of your own domain (`acme-corp.co`)
@@ -49,6 +59,8 @@ email-forensics analyze suspicious.eml
 email-forensics analyze --json --min-severity medium *.eml
 email-forensics analyze suspicious.eml --extract-dir ./case42/attachments
 email-forensics analyze suspicious.eml --protected-domain acme-corp.com --protected-domains-file partners.txt
+email-forensics analyze suspicious.eml --online --dns-record case42-dns.json   # verify DKIM/SPF/DMARC/ARC now
+email-forensics analyze suspicious.eml --dns-replay case42-dns.json            # reproduce later, offline
 # or without installing:
 PYTHONPATH=src python -m email_forensics analyze tests/fixtures/bec_spoof.eml
 ```
@@ -60,6 +72,13 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 | Code | Severity | Meaning |
 |---|---|---|
 | `HDR_DISPLAY_NAME_SPOOF` | high | Display name contains an address from a different domain than the real sender |
+| `AUTHV_DKIM_BODY_MODIFIED` | high | Body no longer matches the DKIM body hash (works offline) |
+| `AUTHV_DKIM_FAIL`, `AUTHV_DMARC_FAIL`, `AUTHV_SPF_FAIL` | high (DMARC: medium if p=none) | Re-verification failed |
+| `AUTHV_DKIM_UNSIGNED_CONTENT` | high | Content after the `l=` limit is not covered by the signature |
+| `AUTHV_MISMATCH` | high (DKIM) / medium (SPF, DMARC) | Receiver's recorded verdict differs from re-verification |
+| `AUTHV_ARC_FAIL`, `AUTHV_DKIM_PERMERROR` (key missing/revoked), `AUTHV_SPF_SOFTFAIL`, `AUTHV_DKIM_WEAK_KEY` (<1024 bit) | medium | |
+| `AUTHV_DMARC_NONE`, `AUTHV_DMARC_POLICY_NONE`, `AUTHV_DKIM_SHA1`, `AUTHV_DKIM_TESTING`, `AUTHV_DKIM_LENGTH_TAG`, `AUTHV_DKIM_INVALID`, `AUTHV_DNS_ERRORS`, other `AUTHV_SPF_*` | low | |
+| `AUTHV_DKIM_PASS`, `AUTHV_SPF_PASS`, `AUTHV_DMARC_PASS`, `AUTHV_ARC_PASS`, `AUTHV_DKIM_EXPIRED`, `AUTHV_NO_DKIM`, `AUTHV_OFFLINE` | info | |
 | `LOOKALIKE_HOMOGLYPH`, `LOOKALIKE_TYPO` | high | Domain visually confusable with / one typo from a protected domain |
 | `LOOKALIKE_BRAND_IN_SUBDOMAIN` | high (full domain) / medium (name) | `paypal.com.evil.net` |
 | `LOOKALIKE_COMBO` | high (look-alike spelling) / medium | `paypal-secure.com`, `acme-corp-invoices.com` |
@@ -111,13 +130,13 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 
 ## Known limitations (planned)
 
-- Organizational-domain matching is approximate. We plan to use the Public Suffix List later.
-- Authentication verdicts are read from headers, not re-verified. DKIM/SPF re-verification is planned for Day 5.
+- SPF and DMARC are evaluated against **today's** DNS. Records may have changed since delivery, and DKIM keys are often rotated (a missing key is reported, not treated as forgery). `--dns-record` preserves exactly what was seen.
+- The bundled Public Suffix List is a snapshot (version in the file header); refresh it occasionally.
 - There is no trust boundary configuration yet. `Received` hops below your own MX can be forged by the sender.
 - Only `.eml` files are supported so far. `.msg` and `.mbox` support is planned for Day 7.
 - RAR / 7z / CAB / ISO contents are not listed (flagged as uninspected). Optional extras could add them later.
 - Office/PDF analysis is presence-based (VBA project exists, RTF has objects). Macro source extraction and PDF JavaScript/OpenAction analysis are planned for Day 6.
-- Lookalike detection uses a practical subset of Unicode confusables and an approximate organisational-domain rule (no Public Suffix List yet), so multi-level suffixes beyond `co.uk`-style may be compared imperfectly.
+- Lookalike detection uses a practical subset of Unicode confusables, not the full TR39 table.
 - Provider verdict headers are only trustworthy if your own tenant or gateway added them. The tool reports them but can't verify who added them.
 - Hidden-text detection covers inline styles and the `hidden` attribute, not `<style>` class rules.
 
@@ -127,6 +146,8 @@ Exit code: `0` on success, `2` if an input file could not be loaded.
 python -m pytest
 python tests/fixtures/build_attachments_fixture.py   # regenerate the (inert) attachment fixture
 ```
+
+The DKIM/ARC fixtures in `tests/fixtures/dkim/` were signed by the independent dkimpy library (`tests/fixtures/build_dkim_fixtures.py`, development-only) so the verifier is tested against a reference implementation, not against itself.
 
 Test samples in `tests/samples.py` only imitate the structure of malicious files (headers, archive layout, markers). They contain no working code.
 
@@ -138,9 +159,15 @@ Layout of `src/email_forensics/`:
 | `headers` → `rules` | Header extraction → header findings |
 | `mime` | MIME tree walk, safe decoding |
 | `html_analysis`, `urls`, `textcheck` | HTML, URL and Unicode analysis |
+| `psl`, `crypto`, `resolver` | Public Suffix List, RSA/Ed25519, pluggable and recordable DNS |
+| `dkimcheck`, `spf`, `dmarc`, `auth` | DKIM/ARC, SPF, DMARC, re-verification findings |
 | `brands`, `lookalike`, `mailer`, `identity` | Reference data, lookalike engine, mailer fingerprints, identity findings |
 | `filetype`, `archives`, `attachments` | Magic-byte detection, bounded archive listing, attachment findings and extraction |
 | `body` | Body orchestration and body findings |
 | `domains` | Shared domain helpers |
 | `analyzer` | Runs everything and builds the `Report` |
 | `report`, `cli` | Output |
+
+## Third-party data
+
+`src/email_forensics/data/public_suffix_list.dat` is the [Public Suffix List](https://publicsuffix.org/), distributed under the Mozilla Public License 2.0.

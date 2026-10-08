@@ -1,0 +1,60 @@
+ARC-Seal: i=2; cv=pass; a=rsa-sha256; d=forwarder2.test; s=arc;
+ t=1791439317;
+ b=A4fcKz0auHB3NeQKk5aOuEb549ERFNfSTyCGn+00X1LcP10srGizyPz0764pXbBeoWubI
+ Bfre2c9yXpPLu6OK5w0JBzianAlf/2mSToFZuD38eeIllVmy2zUtpzLPzj8rPnWSCdBWKEx
+ rknIv863jVzZCe7nC8u9ZM9oCWVeuBHCj2GQaoA3YuJoHJRonXA9mPAwrGUNy/C9v+s0qGx
+ tQOM7b0k4q0G4ILq7jnJWjNOjgnmt1pLNsAYZ++xKcw1XJqqjHTDwodXop9pLI/RW/EUdAX
+ hbs02Re1rYEeEyCyFuAK+Dr2bP2LcJoBIMiZKHOKOFzdxtNTTLZvuJDLXiNQ==
+ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed;
+ d=forwarder2.test; s=arc; t=1791439317; h=from : to : subject : date :
+ message-id : mime-version : content-type : from;
+ bh=DNpkbl4N3YbJ4S3OSCKSnpNza1Z+l54snYw7/uxhxmU=;
+ b=KapajJMGT03RmtgRfa0Vwf3nT7mn3Sm1/TxeQtglvYDGqeoxorE7xBNiQxBCHKcXkclIi
+ ksvoPWOD2C27fQUIQE22JRVV1eIWNB7+ChRbXvauMFJ+lbPYesb2aEs3OJi/l/r7vZHkvhD
+ jtUmOprIidi954D93qiPOKs4LC8yWKQq/YB0R6xDC0S+fEkWTQOKJlFz/duolmH3XWlRflC
+ pMt+wQBkAjjJMfhRMxhFLcEkxKRF4aDraxeW2oQz8gomG8cILJ4L+4Cnxu+b+4Ysm/BAQX1
+ 0kQfcVkkWWKw2eNrgCLTFnOEYRo7SnY5GNpZ7ZkxtHQde7Ny7TQU1/OE9zVA==
+ARC-Authentication-Results: i=2; mx.forwarder2.test;
+ dkim=pass header.d=signer.test;
+ arc=pass
+Authentication-Results: mx.forwarder2.test; dkim=pass header.d=signer.test; arc=pass
+ARC-Seal: i=1; cv=none; a=rsa-sha256; d=forwarder1.test; s=arc;
+ t=1791439317;
+ b=FHnxk5XDrbi1sHpPV6ELNN3OfLfirE4MW+KYHqJazO5PAnXSjrQy4Pk8+jM8dDRT6+2Br
+ LbXxluFeumOaiFBKUqEi53hEZ1yP1JsXop/uxV9o52nTp0nojI0D4WuhKFss3XrWYaaVw0X
+ ZSYKqA7/bgfcuM6e3Jtn3prxdWnaVtdryQYNCr2QkDZlyfRzOfMM86QZa9npWELVg4wqHE7
+ JYPzrHJMzRNZ4K+xcQVGpy+FP5cc05qMnyRjMQ+8oODbgpi+kQTsulReXoYIEvyFVYbuPxn
+ Hu2pSmWEyqae+ZpyVPp9V5W5ZBuh3tRUor+9ZzADh9uSqKQGXcRSrEtRwgfg==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed;
+ d=forwarder1.test; s=arc; t=1791439317; h=from : to : subject : date :
+ message-id : mime-version : content-type : from;
+ bh=DNpkbl4N3YbJ4S3OSCKSnpNza1Z+l54snYw7/uxhxmU=;
+ b=kfBD/ZNoSmDJjXdA82CJX9VI0s06M1zPzeRxqB7hDMj65XvgWHwD6jUdjeSS2YJurfXPv
+ EUqN0nalwMN7z4DpAtBh3J8ZbxdLlRqHxs6mO1+IbjQJaJOJGo7TDGxBORbtHJXZzru9o42
+ 6qgmSWY9v34uqgugrZmJ4Y+oX4MZfMqepO+YdHLtfzto/So/rWueqOtU2oKbTNDxZAmrVx3
+ IXvznYasAbsnnU9a/ZygC/WuKOmu90oyMnbryNKwyuWpqdYdnLp1Em8+IjM2/XQnig76xWY
+ dEOfNbqjQ/X9tKFLh8Y4AwobE1e2XC/B6JxfipvJz+PpkK2Wq5m0sKdD8xBA==
+ARC-Authentication-Results: i=1; mx.forwarder1.test;
+ dkim=pass header.d=signer.test
+Authentication-Results: mx.forwarder1.test; dkim=pass header.d=signer.test
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=signer.test;
+ i=@signer.test; q=dns/txt; s=s2048; t=1791439317; h=from : to :
+ subject : date : message-id;
+ bh=DNpkbl4N3YbJ4S3OSCKSnpNza1Z+l54snYw7/uxhxmU=;
+ b=mx6Jp2w0kiYEZn8LJGybg5kKLkAemvhe/Q9qJ8zr+tVrAcfM2X/kYebEjV/X/vS5NDD/z
+ bYXfsG1GVp9PKas/WrDRvLcYuE46FH9pfUTrQrnMHcBR02khgVbKEoLeQ6JoX5lcJrvZ/SI
+ kgksuNgzyP09dokQWHiowOBxBr7PQFUjvzp6PkJ0OpAz+aetzSJ9tzvIQJGEjI/K03Qp7XA
+ q54H22kue0TIiPd5fyYH6J0w8+Q/XUy67/U+sWfgYIYoqLS/JiMqBGp7VWK3kZKoR13yU7c
+ ZPsQT1QYos361YGjNNES5gDI9H+rClSzjwt7hi963Zv4nyyWQ2RFb+ODGQTQ==
+From: Alice <alice@signer.test>
+To: Bob <bob@receiver.test>
+Subject: Quarterly   numbers
+Date: Tue, 22 Sep 2026 10:00:00 +0000
+Message-ID: <q3@signer.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi Bob,  
+the numbers	are attached.
+
+

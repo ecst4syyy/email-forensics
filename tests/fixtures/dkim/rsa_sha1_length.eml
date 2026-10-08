@@ -1,0 +1,18 @@
+DKIM-Signature: v=1; a=rsa-sha1; c=relaxed/simple; d=signer.test;
+ i=@signer.test; l=38; q=dns/txt; s=old; t=1791439317; h=from : to :
+ subject : date : message-id; bh=1eVaMpWvdZtjILjxw7Sqi68x7Vs=;
+ b=QbkGIM5lQl4poDKNdA+3ccxIJWASpvez4UTt//oWT6fBZaTS0cGLG2NJ6V5VypQSqQHAd
+ zcDW5i2xGrwaNX5DHo/nI4TMaWm2aaCJ5YtI+W+2FS8QZZguUvPxFaZMvUBmvbGRctk2STx
+ KOYCu8smy9pEmClN6gt/WGe384aLuHQ=
+From: Alice <alice@signer.test>
+To: Bob <bob@receiver.test>
+Subject: Quarterly   numbers
+Date: Tue, 22 Sep 2026 10:00:00 +0000
+Message-ID: <q3@signer.test>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi Bob,  
+the numbers	are attached.
+
+

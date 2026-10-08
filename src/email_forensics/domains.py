@@ -1,10 +1,8 @@
-"""Domain helpers shared by header and URL analysis."""
+"""Domain helpers shared by header, URL and authentication analysis."""
 
 from __future__ import annotations
 
-# Rough second-level suffixes so "mail.example.co.uk" and "example.co.uk" compare equal.
-# A full Public Suffix List lookup is planned for a later day.
-_SECOND_LEVEL = {"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or"}
+from .psl import registrable_domain
 
 
 def domain_of(address: str | None) -> str | None:
@@ -14,10 +12,5 @@ def domain_of(address: str | None) -> str | None:
 
 
 def org_domain(domain: str | None) -> str | None:
-    """Approximate organizational domain (without a Public Suffix List)."""
-    if not domain:
-        return None
-    labels = domain.lower().rstrip(".").split(".")
-    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL:
-        return ".".join(labels[-3:])
-    return ".".join(labels[-2:])
+    """Organisational (registrable) domain per the Public Suffix List."""
+    return registrable_domain(domain)

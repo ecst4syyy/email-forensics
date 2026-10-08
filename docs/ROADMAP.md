@@ -121,7 +121,7 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | **2** ✅ | **MIME structure & body** | MIME tree walker, RFC 2047 decoding anomalies, plain/HTML body extraction, static HTML analysis (hidden text, forms, scripts, pixels), invisible Unicode, URL extraction (text + HTML `href`/`src`), link-text vs `href` mismatch, IP-literal / shortener / punycode URLs |
 | **3** ✅ | **Attachments (static)** | Attachment extraction to a safe output dir, RFC 2231 filename anomalies, hashes, magic-byte type detection vs extension vs MIME type, double-extension & RTLO detection, risky types (`.html`, `.svg`, `.lnk`, `.iso`, `.one`), archive listing + zip-bomb guard |
 | **4** ✅ | **Sender-identity heuristics** | Lookalike / homoglyph domain detection (confusables + edit distance against a protected-domains list), `X-Mailer` / `User-Agent` fingerprinting, `Message-ID` analysis, provider-specific headers (Exchange/O365 `X-MS-*`, Gmail) |
-| 5 | Authentication re-verification (opt-in online) | DKIM signature verification (`dkimpy`), SPF evaluation for the first external hop IP (`pyspf`), DMARC policy + alignment, ARC chain validation, DNS lookup timestamps recorded in the report |
+| **5** ✅ | **Authentication re-verification (opt-in online)** | DKIM signature verification (`dkimpy`), SPF evaluation for the first external hop IP (`pyspf`), DMARC policy + alignment, ARC chain validation, DNS lookup timestamps recorded in the report |
 | 6 | Office / PDF / script payloads | `oletools` (VBA macros, DDE, remote templates), PDF keyword scan (JS, OpenAction, EmbeddedFile, Launch), HTML/SVG attachment script detection |
 | 7 | Additional input formats | Outlook `.msg` (`extract-msg`), `.mbox` batch mode, nested `message/rfc822` recursion |
 | 8 | Scoring & reporting | Weighted risk score with explanations, HTML report, IOC export (CSV, STIX 2.1, MISP JSON) |
@@ -131,7 +131,7 @@ We add one small, tested piece per day. Each day ends with passing tests and a w
 | 12 | Case management | Case folders, chain-of-custody log, bulk ingest, search across a case, report signing |
 | 13+ | UI / integrations | Web UI or TUI, REST API, SIEM/SOAR integration, PST ingestion (`libpff`) |
 
-Carried forward from Day 4: full Unicode TR39 confusables table, Public Suffix List, newly-registered-domain checks (Day 9 enrichment), Google Workspace / Proofpoint / Mimecast verdict headers.
+Carried forward from Day 4: full Unicode TR39 confusables table, newly-registered-domain checks (Day 9 enrichment), Google Workspace / Proofpoint / Mimecast verdict headers.
 
 Carried forward from Day 3: RAR/7z/ISO listing via optional extras, ssdeep/TLSH similarity hashes, correlating attachment and body URLs into one IOC list.
 
