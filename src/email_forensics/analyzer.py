@@ -17,6 +17,9 @@ from .attachments import analyze_attachments, correlate_with_body, extract_attac
 from .auth import verify_authentication
 from .body import analyze_body
 from .headers import analyze_headers
+from . import yara_scan
+from .custom_rules import Rule
+from .custom_rules import evaluate as evaluate_rules
 from .enrich import Enricher
 from .identity import analyze_identity
 from .iocs import extract_iocs
@@ -40,6 +43,8 @@ class AnalysisOptions:
     spf_ip: str | None = None
     max_nested_depth: int = MAX_NESTED_DEPTH
     enricher: Enricher | None = None
+    yara_rules: object | None = None  # compiled yara.Rules
+    custom_rules: list[Rule] = field(default_factory=list)
 
 
 def analyze_file(path: str | Path, extract_dir: str | Path | None = None,
@@ -89,7 +94,16 @@ def analyze_message(evidence: EvidenceInfo, raw: bytes, msg: EmailMessage, optio
     if options.enricher is not None:
         report.enrichment, enrich_findings = options.enricher.enrich(extract_iocs(report, include_nested=False),
                                                                      headers.date)
-        report.findings = sorted(report.findings + enrich_findings, key=lambda f: (-f.severity.rank, f.code))
+        report.findings += enrich_findings
+    if options.yara_rules is not None:
+        report.yara, yara_findings = yara_scan.scan(options.yara_rules, raw, tree,
+                                                    [(tb.part, tb.preview) for tb in body.text_bodies], attachments)
+        report.findings += yara_findings
+    if options.custom_rules:
+        report.assessment = assess(report)  # rules may test score/verdict
+        rule_findings, report.suppressed = evaluate_rules(options.custom_rules, report, msg)
+        report.findings += rule_findings
+    report.findings.sort(key=lambda f: (-f.severity.rank, f.code))
     report.assessment = assess(report)
     return report
 

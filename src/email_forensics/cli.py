@@ -11,10 +11,13 @@ from . import __version__
 from .analyzer import AnalysisOptions, analyze_path
 from .loader import EvidenceError
 from .models import Severity
+from .custom_rules import RuleError, load_rules
 from .enrich import Enricher, HttpFetcher, Recorder, ReplayFetcher
 from .iocs import extract_iocs, to_csv, to_misp, to_stix
 from .report import summary_row, to_json, to_summary, to_text
 from .report_html import render_html
+from .yara_scan import YaraUnavailable
+from .yara_scan import compile_rules as compile_yara
 from .resolver import DohResolver, RecordingResolver, ReplayResolver, SystemResolver
 
 
@@ -63,6 +66,10 @@ def main(argv: list[str] | None = None) -> int:
     enrich.add_argument("--no-enrich-cache", action="store_true", help="do not read or write the cache")
     enrich.add_argument("--enrich-record", metavar="FILE", help="save every enrichment request/answer to FILE")
     enrich.add_argument("--enrich-replay", metavar="FILE", help="answer enrichment only from a recording (offline)")
+    analyze.add_argument("--yara", metavar="PATH", action="append", default=[],
+                         help="YARA rule file or directory (repeatable; needs yara-python)")
+    analyze.add_argument("--rules", metavar="FILE", action="append", default=[],
+                         help="custom detection/suppression rules, JSON or TOML (repeatable)")
     analyze.add_argument("--extract-dir", metavar="DIR",
                          help="write attachments to DIR as read-only <sha256>.bin files with a manifest.json")
 
@@ -92,8 +99,15 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    try:
+        yara_rules = compile_yara(args.yara) if args.yara else None
+        custom = load_rules(args.rules) if args.rules else []
+    except (YaraUnavailable, RuleError, OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     options = AnalysisOptions(extract_dir=args.extract_dir, protected_domains=protected,
-                              resolver=resolver, spf_ip=args.spf_ip, enricher=enricher)
+                              resolver=resolver, spf_ip=args.spf_ip, enricher=enricher,
+                              yara_rules=yara_rules, custom_rules=custom)
     for path in args.files:
         try:
             for report in analyze_path(path, options):

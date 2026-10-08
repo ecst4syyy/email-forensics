@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .auth import AuthVerification
+    from .custom_rules import Suppressed
     from .enrich import Enrichment
+    from .yara_scan import YaraMatch
     from .msg import MsgInfo
     from .scoring import Assessment
     from .payloads import PayloadAnalysis
@@ -250,6 +252,8 @@ class Report:
     msg: MsgInfo | None = None
     nested: list[NestedReport] = field(default_factory=list)
     enrichment: Enrichment | None = None
+    yara: list[YaraMatch] = field(default_factory=list)
+    suppressed: list[Suppressed] = field(default_factory=list)
     assessment: Assessment | None = None
     findings: list[Finding] = field(default_factory=list)
 

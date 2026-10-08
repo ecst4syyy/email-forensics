@@ -174,6 +174,14 @@ def _to_text(report: Report) -> str:
         if att.extracted_to:
             lines.append(f"    extracted: {att.extracted_to}")
 
+    if report.yara:
+        lines += ["", f"=== YARA matches ({len(report.yara)}) ==="]
+        lines += [f"- {m.namespace}:{m.rule} in {safe_display(m.target)}"
+                  + (f"  [{', '.join(m.strings[:4])}]" if m.strings else "") for m in report.yara[:50]]
+    if report.suppressed:
+        lines += ["", f"=== Suppressed by custom rules ({len(report.suppressed)}) ==="]
+        lines += [f"- {x.code} (rule {x.rule}): {safe_display(x.message)[:120]}" for x in report.suppressed]
+
     lines += ["", f"=== Findings ({len(report.findings)}) ==="]
     for f in report.findings:
         lines.append(f"[{f.severity.value.upper():<6}] {f.code}: {safe_display(f.message)}")

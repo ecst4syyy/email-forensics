@@ -46,6 +46,8 @@ _PREFIX_CATEGORIES = (
     (("HDR_MAILER", "HDR_PHP"), "sending software"),
     (("NESTED_",), "attached messages"),
     (("ENRICH_",), "reputation"),
+    (("YARA_",), "signatures"),
+    (("RULE_",), "custom rules"),
     (("RCV_", "HDR_", "PARSE_", "MIME_", "BODY_", "TEXT_"), "structure and evasion"),
     (("MSG_",), "context"),
 )

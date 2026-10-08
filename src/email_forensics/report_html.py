@@ -222,6 +222,17 @@ def _report(r: Report, level: int) -> str:
     out.append(f'<section><h2>All findings ({len(r.findings)})</h2><div class="wrap"><table class="stack">{rows}</table>'
                '</div></section>')
 
+    if r.yara:
+        rows = "".join(f'<tr><td><code>{esc(m.namespace)}:{esc(m.rule)}</code></td><td class="msg">{esc(m.target)}</td>'
+                       f'<td class="msg">{esc(", ".join(m.strings[:6]))}</td></tr>' for m in r.yara[:100])
+        out.append(f'<section><h2>YARA matches ({len(r.yara)})</h2><div class="wrap"><table class="stack">{rows}</table>'
+                   '</div></section>')
+    if r.suppressed:
+        rows = "".join(f'<tr><td><code>{esc(x.code)}</code></td><td>{esc(x.rule)}</td><td class="msg">{esc(x.message)}</td></tr>'
+                       for x in r.suppressed)
+        out.append(f'<section><h2>Suppressed by custom rules ({len(r.suppressed)})</h2><div class="wrap">'
+                   f'<table class="stack">{rows}</table></div></section>')
+
     if r.body.text_bodies:
         previews = "".join(f'<h3>Part {esc(tb.part)} <span class="muted">{esc(tb.content_type)}, {tb.length:,} chars'
                            f'</span></h3><pre>{esc(tb.preview[:3000])}</pre>' for tb in r.body.text_bodies)

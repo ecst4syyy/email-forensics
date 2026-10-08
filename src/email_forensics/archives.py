@@ -31,9 +31,10 @@ INSPECTABLE = ZIP_TYPES | STREAM_TYPES | {TAR.id}
 
 
 class _Budget:
-    def __init__(self) -> None:
+    def __init__(self, visitor=None) -> None:
         self.remaining = MAX_TOTAL_READ
         self.exhausted = False
+        self.visitor = visitor  # optional callback(member_path, payload) for content scanners
 
     def allow(self, size: int) -> bool:
         if size > min(self.remaining, MAX_MEMBER_READ):
@@ -45,12 +46,14 @@ class _Budget:
         self.remaining -= n
 
 
-def inspect_archive(data: bytes, ftype: FileType) -> ArchiveInfo:
+def inspect_archive(data: bytes, ftype: FileType, visitor=None) -> ArchiveInfo:
+    """List an archive. `visitor(path, payload)` is called for every member whose content
+    was read within the safety limits (used by YARA scanning)."""
     info = ArchiveInfo(format=ftype.id)
     if ftype.id not in INSPECTABLE:
         info.error = f"{ftype.description} listing is not supported without optional tools"
         return info
-    budget = _Budget()
+    budget = _Budget(visitor)
     _inspect(data, ftype, None, 0, info, budget)
     info.truncated = info.truncated or budget.exhausted
     return info
@@ -88,13 +91,15 @@ def _add(member: ArchiveMember, payload: bytes | None, depth: int, info: Archive
     if payload is None:
         return
     member.sha256 = hashlib.sha256(payload).hexdigest()
+    path = f"{member.container}/{member.name}" if member.container else member.name
+    if budget.visitor is not None:
+        budget.visitor(path, payload)
     ftype = detect(payload)
     member.detected_type = ftype.id if ftype else None
     if ftype and ftype.id in INSPECTABLE:
         if depth + 1 > MAX_NESTING:
             info.truncated = True
             return
-        path = f"{member.container}/{member.name}" if member.container else member.name
         _inspect(payload, ftype, path, depth + 1, info, budget)
 
 

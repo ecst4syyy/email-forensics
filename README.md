@@ -2,7 +2,12 @@
 
 A tool for forensic analysis of email: headers, bodies and attachments. We build it one day at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the research notes and the day-by-day plan.
 
-## Status: Day 9 (opt-in enrichment)
+## Status: Day 10 (YARA and custom rules)
+
+**Day 10**
+- **YARA** (`--yara FILE_OR_DIR`, optional `pip install "email-forensics[yara]"`): scans the raw message, decoded bodies, every attachment, archive members (within the archive safety limits) and **decoded content the analyzers recovered**: decompressed VBA source, XLM formulas, PDF JavaScript, decoded PowerShell and shortcut command lines. Rule `meta` sets `severity` and `description`. Example rules: `examples/yara/`
+- **Custom rules** (`--rules FILE`, JSON or TOML) for organisation-specific detection without code: combine conditions on fields (subject, sender/reply-to domains, recipients, body, URLs, attachment names/types/hashes, any raw header, recorded auth results, score, verdict, ...) and existing findings with `all` / `any` / `none`. Matches become `RULE_<ID>` findings that count towards the score
+- **Suppression rules** remove known-benign findings (for example a partner newsletter's tracking links). Suppressed findings are listed in the report, never dropped silently. Example: `examples/rules/example.toml`
 
 **Day 9**
 - `--enrich` looks up the message's indicators with external services. It is off by default, sends indicators but **never files** (hashes only), and every request and answer is recorded in the JSON report
@@ -89,13 +94,14 @@ A tool for forensic analysis of email: headers, bodies and attachments. We build
 ## Usage
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]"          # optional extras: [dns] (dnspython), [yara] (yara-python), [all]
 email-forensics analyze suspicious.eml
 email-forensics analyze reported.msg                      # Outlook messages
 email-forensics analyze export.mbox --summary             # one line per message
 email-forensics analyze suspicious.eml --format html -o report.html --iocs iocs.json   # STIX 2.1
 email-forensics analyze suspicious.eml --iocs iocs.csv --fail-on suspicious
 VT_API_KEY=... email-forensics analyze suspicious.eml --enrich --doh --enrich-record case42-enrich.json
+email-forensics analyze inbox.mbox --summary --yara examples/yara --rules examples/rules/example.toml
 email-forensics analyze --json --min-severity medium *.eml
 email-forensics analyze suspicious.eml --extract-dir ./case42/attachments
 email-forensics analyze suspicious.eml --protected-domain acme-corp.com --protected-domains-file partners.txt
@@ -128,6 +134,8 @@ Some findings are near-conclusive on their own and set a minimum score: an auto-
 | `MACRO_AUTOEXEC`, `MACRO_SUSPICIOUS`, `DOC_ACTIVEX`, `PDF_AUTO_ACTION`, `PDF_SUBMIT_FORM`, `PDF_REMOTE_GOTO`, `PDF_RICHMEDIA`, `PDF_OBFUSCATED_NAMES`, `LNK_LONG_ARGUMENTS`, `LNK_ICON_DISGUISE`, `LNK_HIDDEN_WINDOW`, `SCRIPT_EXECUTION`, `SCRIPT_OBFUSCATED` | medium | |
 | `DOC_REMOTE_IMAGE`, `PDF_XFA`, `PDF_ENCRYPTED`, `PDF_TRUNCATED` | low | |
 | `DOC_METADATA`, `PDF_LINKS`, `LNK_MACHINE_ID` | info | Attribution and context |
+| `YARA_MATCH` | from rule `meta.severity` (default high) | A YARA rule matched |
+| `RULE_<ID>` | from the rule | A custom rule matched |
 | `ENRICH_KNOWN_MALWARE`, `ENRICH_URLHAUS_LISTED` | high | Hash/URL known to malware databases |
 | `ENRICH_NEW_DOMAIN`, `ENRICH_VT_DETECTIONS`, `ENRICH_ABUSIVE_IP` | high / medium | Newly registered domain; reputation hits |
 | `ENRICH_IP_ASN`, `ENRICH_ERRORS` | info | Network context; failed lookups |
@@ -234,6 +242,7 @@ Layout of `src/email_forensics/`:
 | `domains` | Shared domain helpers |
 | `analyzer` | Runs everything and builds the `Report` |
 | `enrich` | Opt-in enrichment providers, cache, recording/replay |
+| `yara_scan`, `custom_rules` | YARA scanning; JSON/TOML detection and suppression rules |
 | `scoring` | Score, verdict and reasons |
 | `report`, `report_html`, `iocs`, `cli` | Text/JSON/HTML output, IOC export (CSV/STIX/MISP), command line |
 
