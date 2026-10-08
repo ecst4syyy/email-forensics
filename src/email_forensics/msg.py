@@ -13,6 +13,7 @@ import struct
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email import policy
+from email.header import Header
 from email.message import EmailMessage
 from email.parser import HeaderParser
 from email.utils import format_datetime, formataddr
@@ -216,7 +217,9 @@ def _synthesize_headers(msg: EmailMessage, props: _Props, cf: CompoundFile, pref
         _set_raw(msg, "Cc", ", ".join(cc))
     subject = props.string(PR_SUBJECT)
     if subject is not None:
-        _set_raw(msg, "Subject", subject)
+        # MAPI gives us real Unicode text: encode it as RFC 2047 UTF-8 words. As raw 8-bit it would
+        # be re-serialised as "=?unknown-8bit?...?=", which reads as a malformed header.
+        _set_raw(msg, "Subject", subject if subject.isascii() else Header(subject, "utf-8").encode())
     when = info.submit_time or info.delivery_time or info.creation_time
     if when:
         _set_raw(msg, "Date", format_datetime(datetime.fromisoformat(when)))

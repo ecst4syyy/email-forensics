@@ -99,7 +99,7 @@ curl -H "Authorization: Bearer $EMAIL_FORENSICS_API_TOKEN" --data-binary @x.eml 
 |---|---|
 | `GET /` | Web UI (with a plain upload form when JavaScript is off) |
 | `GET /api/v1/health` | Version, whether a token is required, and the enabled options. No token needed |
-| `POST /api/v1/analyze?format=json\|html\|text\|summary\|jsonl\|cef\|bundle` | Report. The body is raw `.eml`/`.msg`/mbox bytes (optional `X-Filename` header) or `multipart/form-data` with a `file` field |
+| `POST /api/v1/analyze?format=json\|html\|text\|summary\|jsonl\|cef\|bundle` | Report. The body is raw `.eml`/`.msg`/mbox bytes (optional `X-Filename` header, percent-encoded UTF-8 or raw UTF-8) or `multipart/form-data` with a `file` field |
 | `POST /api/v1/iocs?format=stix\|misp\|csv` | Indicators |
 
 Errors are JSON `{"error": ...}`: 400 bad input, 401 token, 411 no Content-Length, 413 too large, 422 not an email. All analysis options (`--online`, `--rules`, `--yara`, `--enrich`, `--timeout`, ...) apply to every request. `bundle` returns `{"reports": [...], "elapsed_ms": n}` with each report's indicators included (what the web UI uses). Uploads are analysed in memory and never stored. Connections are handled concurrently, but analyses run one at a time on the main thread, so `--timeout` works and memory stays bounded. Put a reverse proxy in front for TLS.
@@ -248,6 +248,7 @@ Some findings are near-conclusive on their own and set a minimum score: an auto-
 pip install -e ".[dev]"
 python -m pytest
 python -m pyflakes src tests scripts
+pip install playwright && playwright install chromium   # optional: enables tests/test_web_ui.py
 python tests/fixtures/build_attachments_fixture.py   # regenerate the (inert) attachment fixture
 python tests/fixtures/build_regression_corpus.py     # regenerate the fuzzing regression corpus
 python scripts/fuzz.py --iterations 20000 --seed 1   # long fuzz campaign; crashers go to fuzz-crashes/

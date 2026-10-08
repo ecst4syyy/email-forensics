@@ -2,6 +2,13 @@
 
 What each development day added. The plan and research notes are in [ROADMAP.md](ROADMAP.md).
 
+**1.1.1**
+- Fixed: the web UI failed to upload files whose names contain non-Latin-1 characters (en dash, accents, emoji): "String contains non ISO-8859-1 code point". The name is now sent percent-encoded, and the server also accepts raw UTF-8
+- Evidence labels keep readable file names ("Invoice – May, final.eml") and drop only path parts, characters Windows forbids, and control/bidi characters
+- Fixed: `.msg` files without internet headers (sent items, drafts) with a non-ASCII subject were flagged `HDR_ENCODED_WORD_ERROR`, because the rebuilt subject was re-serialised as `=?unknown-8bit?...?=`
+- Web UI: Retry button for failed files, an "analysing" state, and a selection that no longer jumps while a batch finishes
+- `tests/test_web_ui.py`: 16 end-to-end tests in Chromium covering uploads (file picker, drag and drop, mbox, .msg, Unicode names), every report tab, filters and search, nested drill-down, all downloads, copy buttons, theme, history, API tokens, error handling, hostile content, the no-JavaScript fallback and the phone layout; run in CI
+
 **1.1.0: web UI**
 - `email-forensics serve` now opens a full web app: drag-and-drop analysis of `.eml`/`.msg`/mbox files with the verdict and its reasons, filterable findings, delivery route, authentication, links, attachment internals, indicators and attached emails; HTML report and STIX/MISP/CSV downloads; light/dark and phone layouts. Static and self-contained (no CDN), strict CSP, all evidence rendered as text (tested with XSS payloads in a real browser)
 - Fixed: browsers could hang on `serve`, because the single-threaded server blocked on idle keep-alive connections that browsers open. Connections are now handled in threads while analyses still run one at a time on the main thread, so `--timeout` keeps working

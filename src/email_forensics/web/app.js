@@ -172,7 +172,8 @@
   async function api(path, body, filename) {
     const headers = {};
     if (state.token) headers.Authorization = `Bearer ${state.token}`;
-    if (filename) headers["X-Filename"] = filename;
+    // Header values must be Latin-1; file names often are not ("Invoice – May.eml", emoji, accents).
+    if (filename) headers["X-Filename"] = encodeURIComponent(filename);
     const resp = await fetch(path, { method: body ? "POST" : "GET", headers, body, cache: "no-store" });
     if (!resp.ok) {
       let msg = `${resp.status} ${resp.statusText}`;
@@ -205,7 +206,10 @@
 
   // ------------------------------------------------------------------ uploads
 
+  // After a drop, show the first message that finishes; after that only the user's clicks change
+  // what is on screen, so a slow file finishing later never pulls them away from what they read.
   function addFiles(files) {
+    state.follow = true;
     for (const file of files) {
       const max = state.health && state.health.max_upload;
       const entry = { id: nextId++, file, name: file.name || "message", status: "pending", reports: [], error: null };
@@ -213,6 +217,8 @@
       if (max && file.size > max) {
         entry.status = "error";
         entry.error = `File is larger than this server accepts (${fmtBytes(max)}).`;
+        entry.retryable = false;
+        if (!state.selected) show(entry);
         continue;
       }
       analyze(entry);
@@ -228,8 +234,8 @@
       entry.reports = data.reports || [];
       entry.elapsed = data.elapsed_ms;
       entry.status = "done";
-      if (!state.selected || state.selected.entry.status !== "done") select(entry, 0);
-      else if (state.entries.filter((e) => e.status === "pending").length === 0) select(entry, 0);
+      if (state.follow || !state.selected || state.selected.entry === entry
+          || state.selected.entry.status !== "done") show(entry);
     } catch (e) {
       entry.status = "error";
       entry.error = e.message;
@@ -240,12 +246,18 @@
       } else {
         toast(`${entry.name}: ${e.message}`);
       }
-      if (!state.selected) select(entry, 0);
+      if (!state.selected || state.selected.entry === entry) show(entry);
     }
     renderHistory();
   }
 
+  function show(entry) {
+    state.follow = false;
+    select(entry, 0);
+  }
+
   function select(entry, index, path) {
+    state.follow = false;
     state.selected = { entry, index, path: path || [] };
     state.tab = "findings";
     state.findingFilter = "all";
@@ -315,9 +327,18 @@
     $("welcome").hidden = !!sel;
     root.hidden = !sel;
     if (!sel) return;
+    if (sel.entry.status === "pending") {
+      fill(root, h("section", { class: "card fade-in", "aria-busy": "true" },
+        h("h2", { text: `Analysing ${oneLine(sel.entry.name)}…` }), [1, 2, 3, 4].map(() => h("div", { class: "skeleton" }))));
+      return;
+    }
     if (sel.entry.status === "error") {
       fill(root, h("div", { class: "notice error fade-in" },
-        h("b", { text: `Could not analyse ${oneLine(sel.entry.name)}` }), h("div", { text: sel.entry.error })));
+        h("b", { text: `Could not analyse ${oneLine(sel.entry.name)}` }), h("div", { text: sel.entry.error }),
+        sel.entry.retryable === false ? null : h("div", { class: "hero-actions" }, h("button", {
+          class: "btn primary", type: "button", text: "Retry",
+          onclick: () => { sel.entry.status = "pending"; sel.entry.error = null; renderReport(); analyze(sel.entry); },
+        }))));
       return;
     }
     const r = currentReport();

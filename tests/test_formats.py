@@ -183,3 +183,19 @@ def test_msg_with_non_ascii_transport_headers(tmp_path):
     headers = s.TRANSPORT_HEADERS.replace("Subject: Your account is limited", "Subject: Überweisung fällig 請求書")
     report = analyze_file(write(tmp_path, "intl.msg", build_msg(subject="x", transport_headers=headers, body="hi")))
     assert "Überweisung" in report.headers.subject or "berweisung" in report.headers.subject
+
+
+def test_msg_without_transport_headers_keeps_non_ascii_text():
+    """Rebuilt headers must carry Unicode subjects and names as proper encoded-words, not as
+    raw 8-bit text (which re-serialises as =?unknown-8bit?...?= and looks malformed)."""
+    from email_forensics.analyzer import analyze_bytes
+
+    subject = "Gaurav, your Fitness Nation Bedford account – payment due · Müller €"
+    data = build_msg(subject=subject, body="Payment due", sender=("Fitness Nation – Bedford", "noreply@fitnessnation.example"),
+                     recipients=[("Jürgen Groß", "jg@example.de", 1)])
+    (report,) = analyze_bytes("x.msg", data)
+    h = report.headers
+    assert h.subject == subject
+    assert h.from_display_name == "Fitness Nation – Bedford" and h.from_address == "noreply@fitnessnation.example"
+    assert h.to == ["jg@example.de"]
+    assert "HDR_ENCODED_WORD_ERROR" not in {f.code for f in report.findings}

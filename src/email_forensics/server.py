@@ -28,8 +28,9 @@ import json
 import re
 import sys
 import time
+import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
 from .analyzer import AnalysisOptions, analyze_bytes
@@ -104,10 +105,27 @@ def parse_multipart(content_type: str, body: bytes) -> tuple[bytes | None, str |
     return data, filename, fields
 
 
+def _header_filename(value: str | None) -> str | None:
+    """X-Filename as sent by the web UI (percent-encoded UTF-8, since browsers only allow Latin-1
+    in headers) or by curl (raw UTF-8, which http.server hands over decoded as Latin-1)."""
+    if not value:
+        return None
+    try:
+        value = value.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    return unquote(value, errors="replace")
+
+
 def _label(filename: str | None) -> str:
-    """A safe evidence label from a client-supplied file name (it is display-only, never a path)."""
+    """A safe evidence label from a client-supplied file name (it is display-only, never a path).
+
+    Keeps the name readable ("Invoice – May, final.eml") but drops any directory part, characters
+    Windows forbids in file names, and control/format characters (bidi overrides, zero-width
+    spaces) that could disguise the name."""
     name = re.split(r"[\\/]", filename or "")[-1]
-    name = re.sub(r"[^\w.@+-]", "_", name)[:120].strip("._")
+    name = "".join("_" if c in '<>:"|?*' or unicodedata.category(c)[0] == "C" else c for c in name)
+    name = re.sub(r"\s+", " ", name)[:120].strip(" ._")
     return f"upload:{name or 'message'}"
 
 
@@ -185,7 +203,7 @@ class ForensicsHandler(BaseHTTPRequestHandler):
                 raise HttpError(400, "no file in the form")
         else:
             data, fields = body, {}
-            filename = self.headers.get("X-Filename")
+            filename = _header_filename(self.headers.get("X-Filename"))
         if not self._authorized(fields):
             raise HttpError(401, "missing or wrong API token")
         if not data:

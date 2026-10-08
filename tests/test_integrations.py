@@ -277,7 +277,10 @@ def test_bind_policy():
 
 
 def test_label_sanitising():
-    assert _label("/tmp/../x y<script>.eml") == "upload:x_y_script_.eml"
+    assert _label("/tmp/../x y<script>.eml") == "upload:x y_script_.eml"
+    assert _label("C:\\Users\\me\\Gaurav, your account – payment due.eml") == "upload:Gaurav, your account – payment due.eml"
+    assert _label("invoice\u202egpj.exe") == "upload:invoice_gpj.exe"  # bidi override cannot reverse the name
+    assert _label("a\r\nb\x00c\u200b.eml") == "upload:a__b_c_.eml"
     assert _label(None) == "upload:message" and _label("....") == "upload:message"
 
 
