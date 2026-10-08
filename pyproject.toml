@@ -5,10 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "email-forensics"
 version = "1.1.1"
-description = "Forensic analysis of email headers, bodies and attachments"
+description = "Check whether an email is phishing or malware, with an explainable risk score and a local web app"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+keywords = ["email", "forensics", "phishing", "malware", "dfir", "dkim", "spf", "dmarc"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+    "Topic :: Communications :: Email",
+    "Intended Audience :: Information Technology",
+]
+
+[project.urls]
+Homepage = "https://github.com/ecst4syyy/email-forensics"
+Documentation = "https://github.com/ecst4syyy/email-forensics/blob/HEAD/docs/GUIDE.md"
+Changelog = "https://github.com/ecst4syyy/email-forensics/blob/HEAD/docs/CHANGELOG.md"
 
 [project.optional-dependencies]
 dns = ["dnspython>=2.3"]
