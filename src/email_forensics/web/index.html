@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Email Forensics</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.6 12 15 6.9-1.4 12-7.5 12-15V7z" class="logo-shield"/><path d="M9.5 12h13v9h-13z" class="logo-env"/><path d="m9.5 12 6.5 5 6.5-5" class="logo-flap"/></svg>
+    <div>
+      <div class="brand-name">Email Forensics</div>
+      <div class="brand-sub" id="version">headers · bodies · attachments</div>
+    </div>
+  </div>
+  <div class="top-actions">
+    <div class="chips" id="features"></div>
+    <button class="icon-btn" id="theme-toggle" type="button" title="Toggle light/dark theme" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <label class="dropzone" id="dropzone" for="file-input">
+      <input type="file" id="file-input" multiple accept=".eml,.msg,.mbox,.mbx,.txt,message/rfc822,application/vnd.ms-outlook">
+      <svg viewBox="0 0 24 24" class="dz-icon" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      <span class="dz-title">Drop emails here</span>
+      <span class="dz-sub">.eml · .msg · mbox — or click to browse</span>
+      <span class="dz-note">Analysed in memory on this machine. Nothing is stored or sent anywhere.</span>
+    </label>
+    <div class="token-box" id="token-box" hidden>
+      <label for="token-input">API token</label>
+      <input type="password" id="token-input" autocomplete="off" placeholder="Required by this server">
+    </div>
+    <div class="history-head">
+      <span>Messages</span>
+      <button class="link-btn" id="clear-history" type="button" hidden>Clear</button>
+    </div>
+    <ul class="history" id="history"><li class="history-empty">Analysed messages appear here.</li></ul>
+  </aside>
+
+  <main class="main" id="main">
+    <section class="welcome" id="welcome">
+      <h1>Is this email safe?</h1>
+      <p>Drop a suspicious message to get a verdict that explains itself: sender identity and lookalike domains, the delivery route, SPF/DKIM/DMARC, links, HTML tricks, and attachments down to macros, PDFs and shortcuts.</p>
+      <div class="welcome-grid">
+        <div class="welcome-card"><b>Explainable score</b><span>Every point of the 0–100 risk score is tied to a finding you can check.</span></div>
+        <div class="welcome-card"><b>Safe by design</b><span>Nothing in the email is rendered, executed or fetched. Links are defanged.</span></div>
+        <div class="welcome-card"><b>Ready to share</b><span>Export the HTML report or indicators as STIX 2.1, MISP or CSV.</span></div>
+      </div>
+      <noscript>
+        <form class="noscript-form" method="post" action="/api/v1/analyze" enctype="multipart/form-data">
+          <p>JavaScript is off. You can still upload a file and get the HTML report:</p>
+          <input type="hidden" name="format" value="html">
+          <p><input type="file" name="file" required></p>
+          <p><label>API token (if required) <input type="password" name="token" autocomplete="off"></label></p>
+          <p><button type="submit">Analyze</button></p>
+        </form>
+      </noscript>
+    </section>
+    <div id="report" hidden></div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

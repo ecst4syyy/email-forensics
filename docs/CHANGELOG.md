@@ -2,6 +2,11 @@
 
 What each development day added. The plan and research notes are in [ROADMAP.md](ROADMAP.md).
 
+**1.1.0: web UI**
+- `email-forensics serve` now opens a full web app: drag-and-drop analysis of `.eml`/`.msg`/mbox files with the verdict and its reasons, filterable findings, delivery route, authentication, links, attachment internals, indicators and attached emails; HTML report and STIX/MISP/CSV downloads; light/dark and phone layouts. Static and self-contained (no CDN), strict CSP, all evidence rendered as text (tested with XSS payloads in a real browser)
+- Fixed: browsers could hang on `serve`, because the single-threaded server blocked on idle keep-alive connections that browsers open. Connections are now handled in threads while analyses still run one at a time on the main thread, so `--timeout` keeps working
+- `/api/v1/health` reports whether a token is required and which options are enabled; new `format=bundle` (reports with their indicators)
+
 **Day 13 (1.0.0)**
 - **REST API** (`email-forensics serve`): upload page plus `POST /api/v1/analyze` (json/html/text/summary/jsonl/cef) and `POST /api/v1/iocs` (stix/misp/csv), with raw or multipart uploads analysed in memory. Loopback-only unless an API token is set; bearer-token auth, upload size limit, strict security headers
 - **SIEM output**: `--format jsonl` (one JSON event per message, nested messages included, with verdict, reasons, key headers and indicators) and `--format cef` (ArcSight CEF for QRadar/ArcSight/Sentinel)

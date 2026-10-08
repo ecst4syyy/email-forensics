@@ -349,7 +349,7 @@ def _cmd_serve(args) -> int:
     print(f"email-forensics API on http://{host}:{server.server_address[1]}/"
           f"{' (token required)' if token else ''}; Ctrl-C to stop", file=sys.stderr)
     try:
-        server.serve_forever()
+        server.serve()
     except KeyboardInterrupt:
         pass
     finally:

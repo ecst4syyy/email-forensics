@@ -117,16 +117,88 @@ def multipart(fields: dict[str, str], filename: str, data: bytes) -> tuple[bytes
     return out, f"multipart/form-data; boundary={b}"
 
 
-def test_health_and_form(api):
+def test_health_and_web_ui(api):
     base, _ = api()
     status, headers, body = call(base + "/api/v1/health")
-    assert status == 200 and json.loads(body)["status"] == "ok"
+    health = json.loads(body)
+    assert status == 200 and health["status"] == "ok" and health["auth_required"] is False
+    assert health["features"] == {"dns": False, "enrichment": False, "yara": False, "custom_rules": 0,
+                                  "protected_domains": 0, "timeout": None}
     status, headers, body = call(base + "/")
-    assert status == 200 and b'enctype="multipart/form-data"' in body and b"<script" not in body
-    assert "default-src 'none'" in headers["Content-Security-Policy"]
-    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert status == 200 and b'<script src="/static/app.js"' in body
+    assert b'enctype="multipart/form-data"' in body  # <noscript> fallback form
+    csp = headers["Content-Security-Policy"]
+    assert "default-src 'none'" in csp and "script-src 'self'" in csp and "unsafe" not in csp
+    assert headers["X-Content-Type-Options"] == "nosniff" and headers["X-Frame-Options"] == "DENY"
+    for path, ctype in [("/static/app.js", "text/javascript"), ("/static/app.css", "text/css"),
+                        ("/static/favicon.svg", "image/svg+xml")]:
+        status, headers, body = call(base + path)
+        assert status == 200 and headers["Content-Type"].startswith(ctype) and body
+    js = call(base + "/static/app.js")[2]
+    for sink in (b".innerHTML", b".outerHTML", b"insertAdjacentHTML", b"document.write", b"eval(", b"new Function"):
+        assert sink not in js, sink  # evidence is only ever inserted as text
+    assert call(base + "/static/../server.py")[0] == 404
+    assert call(base + "/static/other.js")[0] == 404
     assert call(base + "/nope")[0] == 404
     assert call(base + "/api/v1/analyze")[0] == 405
+
+
+def test_bundle_format_for_the_ui(api):
+    base, _ = api()
+    status, _, body = call(base + "/api/v1/analyze?format=bundle", mbox(PHISH, LEGIT))
+    data = json.loads(body)
+    assert status == 200 and isinstance(data["elapsed_ms"], int) and len(data["reports"]) == 2
+    first = data["reports"][0]
+    assert first["assessment"]["verdict"] == "malicious"
+    assert {"type": "domain", "value": "secure-paypa1.com", "role": "from-domain"}.items() <= next(
+        i for i in first["indicators"] if i["value"] == "secure-paypa1.com" and i["role"] == "from-domain").items()
+
+
+def test_idle_keepalive_connection_does_not_block_others(api):
+    """Browsers open spare connections and leave them idle; the server must keep serving."""
+    import socket
+
+    base, srv = api()
+    idle = socket.create_connection(srv.server_address[:2])  # connected, never sends a request
+    try:
+        start = time.monotonic()
+        assert call(base + "/api/v1/health")[0] == 200
+        assert call(base + "/api/v1/analyze", PHISH)[0] == 200
+        assert time.monotonic() - start < 10
+    finally:
+        idle.close()
+
+
+def test_serve_runs_analyses_on_the_main_thread(monkeypatch):
+    import email_forensics.server as server_mod
+
+    threads = []
+    real = server_mod.analyze_bytes
+
+    def spy(label, data, options):
+        threads.append(threading.current_thread() is threading.main_thread())
+        return real(label, data, options)
+
+    monkeypatch.setattr(server_mod, "analyze_bytes", spy)
+    srv = ForensicsServer(("127.0.0.1", 0), AnalysisOptions(timeout=30), quiet=True)
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    results = []
+
+    def client():
+        try:
+            for _ in range(3):
+                results.append(call(base + "/api/v1/analyze?format=summary", PHISH)[0])
+            results.append(call(base + "/api/v1/analyze", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 600)[0])
+        finally:
+            import _thread
+            _thread.interrupt_main()  # stops serve() like Ctrl-C
+
+    threading.Thread(target=client, daemon=True).start()
+    with pytest.raises(KeyboardInterrupt):
+        srv.serve()
+    srv.server_close()
+    assert results == [200, 200, 200, 422]
+    assert threads and all(threads)  # SIGALRM timeouts work because analysis ran on the main thread
 
 
 def test_analyze_raw_upload_all_formats(api):

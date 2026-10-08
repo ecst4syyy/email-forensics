@@ -6,6 +6,25 @@ It reads `.eml`, Outlook `.msg` and mbox files and explains its verdict finding 
 
 Research notes and the development plan: [`docs/ROADMAP.md`](docs/ROADMAP.md). What each day added: [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
+## Quick start
+
+```bash
+git clone https://github.com/ecst4syyy/email-forensics && cd email-forensics
+python -m pip install .            # Python 3.10+; no other dependencies
+email-forensics serve              # then open http://127.0.0.1:8025/ and drop an email
+```
+
+![Web UI showing a phishing email scored 87/100, malicious, with the reasons behind the score](docs/images/web-ui.png)
+
+Or from the command line:
+
+```bash
+email-forensics analyze suspicious.eml                 # text report
+email-forensics analyze suspicious.eml --format html -o report.html
+```
+
+To get a suspicious email as a file: in Outlook desktop, drag the message to a folder (`.msg`) or use *File › Save As*. In Outlook on the web or Gmail, use *Download* / *Show original › Download original* (`.eml`). Thunderbird and Apple Mail: *Save As* (`.eml`). The original file keeps the headers the analysis needs; a forwarded copy does not.
+
 ## Features
 
 | Area | What it does |
@@ -20,7 +39,8 @@ Research notes and the development plan: [`docs/ROADMAP.md`](docs/ROADMAP.md). W
 | **Enrichment** | Opt-in RDAP domain age, Team Cymru ASN, VirusTotal, URLhaus, MalwareBazaar and AbuseIPDB, with caching, rate limits and record/replay |
 | **Output** | Text, JSON, safe self-contained HTML, IOC export (CSV/STIX 2.1/MISP) and SIEM events (JSON Lines, CEF) |
 | **Cases** | Case folders with a hash-chained, Ed25519-signed chain of custody, signed reports, cross-message search and campaign indicators |
-| **Integration** | Local REST API with an upload page, drop-folder watcher, `--fail-on` exit codes for pipelines |
+| **Web UI** | Drag-and-drop analysis in the browser with verdict, reasons, findings, delivery route, authentication, links, attachments (macros, PDF JavaScript, shortcuts), indicators and attached emails; light/dark, phone-friendly, exports |
+| **Integration** | Local REST API, drop-folder watcher, `--fail-on` exit codes for pipelines |
 | **Robustness** | Bounded parsers, per-analyzer isolation, per-message timeouts, fuzzed with over 100,000 inputs and a regression corpus |
 
 ## Usage
@@ -46,10 +66,25 @@ PYTHONPATH=src python -m email_forensics analyze tests/fixtures/bec_spoof.eml
 
 Exit code: `0` on success, `1` if `--fail-on` matched, `2` if an input file could not be loaded or the options were invalid.
 
+## Web UI
+
+`email-forensics serve` starts a local web app at <http://127.0.0.1:8025/>. Drop one or more `.eml`, `.msg` or mbox files onto the page (every message in a mailbox gets its own entry) and browse:
+
+- **Verdict**: the score gauge, the findings that produced every point, and risk per category
+- **Findings**, filterable by severity and searchable, with the evidence behind each one
+- **Sender & route**: identity headers and the delivery path, oldest hop first, with the origin IP marked
+- **Authentication**: what the receiving server recorded, and DKIM/ARC/SPF/DMARC re-verification
+- **Links & content**: every URL (defanged, never clickable) and what the HTML shows vs. hides
+- **Attachments**: true type, hashes, archive contents, macro source, DDE, PDF JavaScript, shortcut command lines
+- **Indicators**, **attached emails** (drill into a forwarded phish) and the raw JSON
+- Download the self-contained HTML report, or indicators as STIX 2.1 / MISP / CSV
+
+All analysis options apply (`email-forensics serve --doh --protected-domain acme-corp.com --rules org.toml ...`), and the header shows which are active. The page is static and self-contained: no CDN, no tracking, nothing leaves your machine unless you enabled DNS or enrichment. Every value from an email is inserted as text, and a strict Content Security Policy (`script-src 'self'`, no inline code) backs that up. Uploaded files stay in the browser tab and in server memory only.
+
 ## REST API
 
 ```bash
-email-forensics serve                                   # http://127.0.0.1:8025/ (upload page)
+email-forensics serve                                   # http://127.0.0.1:8025/ (web UI)
 curl --data-binary @suspicious.eml 'http://127.0.0.1:8025/api/v1/analyze?format=summary'
 curl -F file=@reported.msg -F format=html http://127.0.0.1:8025/api/v1/analyze > report.html
 curl --data-binary @suspicious.eml 'http://127.0.0.1:8025/api/v1/iocs?format=misp'
@@ -62,12 +97,12 @@ curl -H "Authorization: Bearer $EMAIL_FORENSICS_API_TOKEN" --data-binary @x.eml 
 
 | Endpoint | |
 |---|---|
-| `GET /` | Upload form (no scripts) |
-| `GET /api/v1/health` | `{"status": "ok", "version": ...}`, no token needed |
-| `POST /api/v1/analyze?format=json\|html\|text\|summary\|jsonl\|cef` | Report. The body is raw `.eml`/`.msg`/mbox bytes (optional `X-Filename` header) or `multipart/form-data` with a `file` field |
+| `GET /` | Web UI (with a plain upload form when JavaScript is off) |
+| `GET /api/v1/health` | Version, whether a token is required, and the enabled options. No token needed |
+| `POST /api/v1/analyze?format=json\|html\|text\|summary\|jsonl\|cef\|bundle` | Report. The body is raw `.eml`/`.msg`/mbox bytes (optional `X-Filename` header) or `multipart/form-data` with a `file` field |
 | `POST /api/v1/iocs?format=stix\|misp\|csv` | Indicators |
 
-Errors are JSON `{"error": ...}`: 400 bad input, 401 token, 411 no Content-Length, 413 too large, 422 not an email. All analysis options (`--online`, `--rules`, `--yara`, `--enrich`, `--timeout`, ...) apply to every request. Uploads are analysed in memory and never stored. The server handles one request at a time, so per-message timeouts work. Put a reverse proxy in front for TLS and concurrency.
+Errors are JSON `{"error": ...}`: 400 bad input, 401 token, 411 no Content-Length, 413 too large, 422 not an email. All analysis options (`--online`, `--rules`, `--yara`, `--enrich`, `--timeout`, ...) apply to every request. `bundle` returns `{"reports": [...], "elapsed_ms": n}` with each report's indicators included (what the web UI uses). Uploads are analysed in memory and never stored. Connections are handled concurrently, but analyses run one at a time on the main thread, so `--timeout` works and memory stays bounded. Put a reverse proxy in front for TLS.
 
 ## Automation
 
@@ -246,7 +281,7 @@ Layout of `src/email_forensics/`:
 | `scoring` | Score, verdict and reasons |
 | `case` | Case folders, custody chain, signing, search, case report |
 | `report`, `report_html`, `iocs`, `siem` | Text/JSON/HTML output, IOC export (CSV/STIX/MISP), SIEM events (JSON Lines/CEF) |
-| `server`, `watch`, `cli` | REST API, drop-folder watcher, command line |
+| `server`, `web/`, `watch`, `cli` | REST API, web UI (static HTML/CSS/JS), drop-folder watcher, command line |
 
 ## Third-party data
 

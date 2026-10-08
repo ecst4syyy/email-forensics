@@ -1,8 +1,8 @@
 """Local REST API: ``email-forensics serve``.
 
-    GET  /                      upload form (no scripts; CSP ``default-src 'none'``)
-    GET  /api/v1/health         {"status": "ok", "version": ...}
-    POST /api/v1/analyze        report for the uploaded message(s); ?format=json|html|text|summary|jsonl|cef
+    GET  /                      web UI (static, self-contained; strict CSP; plain upload form without JavaScript)
+    GET  /api/v1/health         {"status": "ok", "version": ..., "auth_required": ..., "features": {...}}
+    POST /api/v1/analyze        report for the uploaded message(s); ?format=json|html|text|summary|jsonl|cef|bundle
     POST /api/v1/iocs           indicators of the uploaded message(s); ?format=stix|misp|csv
 
 The body is either the raw .eml/.msg/mbox bytes or ``multipart/form-data`` with a
@@ -12,18 +12,23 @@ Security: the server binds to 127.0.0.1 by default and refuses any other address
 unless an API token is configured (``EMAIL_FORENSICS_API_TOKEN``); with a token every
 request except the health check needs ``Authorization: Bearer <token>`` (or a
 ``token`` form field from the upload page). Requests larger than ``--max-upload``
-are rejected with 413. Requests are handled one at a time so the per-message
-timeout (SIGALRM) applies; put a reverse proxy in front for TLS and concurrency.
+are rejected with 413. Connections are handled concurrently, but analyses run one
+at a time on the main thread, so the per-message timeout (SIGALRM) applies and memory
+stays bounded. Put a reverse proxy in front for TLS.
 """
 
 from __future__ import annotations
 
 import hmac
+import importlib.resources
 import ipaddress
+import queue
+import threading
 import json
 import re
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 from . import __version__
@@ -31,13 +36,19 @@ from .analyzer import AnalysisOptions, analyze_bytes
 from .iocs import extract_iocs, to_csv, to_misp, to_stix
 from .loader import EvidenceError
 from .report import summary_row, to_text
-from .report_html import esc, html_head, render_html
+from .report_html import render_html
 from .siem import to_cef, to_jsonl
 
 DEFAULT_MAX_UPLOAD = 50 * 1024 * 1024
 TOKEN_ENV = "EMAIL_FORENSICS_API_TOKEN"
 _CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
-REPORT_FORMATS = ("json", "html", "text", "summary", "jsonl", "cef")
+# The web UI loads only its own script and stylesheet; everything it shows is inserted as text.
+_APP_CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; "
+            "form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+REPORT_FORMATS = ("json", "html", "text", "summary", "jsonl", "cef", "bundle")
+_STATIC = {"/": ("index.html", "text/html; charset=utf-8"), "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
+           "/static/app.css": ("app.css", "text/css; charset=utf-8"),
+           "/static/favicon.svg": ("favicon.svg", "image/svg+xml")}
 IOC_FORMATS = ("stix", "misp", "csv")
 
 
@@ -56,18 +67,8 @@ def is_loopback(host: str) -> bool:
         return False
 
 
-def _form_page(token_required: bool) -> str:
-    token = ('<p><label>API token <input type="password" name="token" autocomplete="off" required></label></p>'
-             if token_required else "")
-    options = "".join(f'<option value="{f}">{f}</option>' for f in REPORT_FORMATS)
-    return (html_head("Email forensics") + "<main><h1>Email forensics</h1>"
-            "<section><p>Upload an .eml, .msg or mbox file. It is analysed in memory on this machine; "
-            "nothing is stored and no lookups are made unless the server was started with them enabled.</p>"
-            '<form method="post" action="/api/v1/analyze" enctype="multipart/form-data">'
-            '<p><input type="file" name="file" required></p>'
-            f'<p><label>Report format <select name="format">{options}</select></label></p>{token}'
-            '<p><button type="submit">Analyze</button></p></form></section>'
-            f'<p class="muted">email-forensics {esc(__version__)}</p></main></body></html>')
+def _static(name: str) -> bytes:
+    return importlib.resources.files("email_forensics").joinpath("web", name).read_bytes()
 
 
 def parse_multipart(content_type: str, body: bytes) -> tuple[bytes | None, str | None, dict[str, str]]:
@@ -116,7 +117,8 @@ class ForensicsHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     # -- responses
-    def _send(self, status: int, body: str | bytes, content_type: str, extra: dict | None = None) -> None:
+    def _send(self, status: int, body: str | bytes, content_type: str, extra: dict | None = None,
+              csp: str = _CSP) -> None:
         data = body.encode("utf-8", "backslashreplace") if isinstance(body, str) else body
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -124,7 +126,8 @@ class ForensicsHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", _CSP)
+        self.send_header("Content-Security-Policy", csp)
+        self.send_header("X-Frame-Options", "DENY")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -196,9 +199,11 @@ class ForensicsHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
         if path == "/api/v1/health":
-            return self._json(200, {"status": "ok", "version": __version__})
-        if path == "/":
-            return self._send(200, _form_page(bool(self.server.token)), "text/html; charset=utf-8")
+            return self._json(200, {"status": "ok", "version": __version__, "auth_required": bool(self.server.token),
+                                    "max_upload": self.server.max_upload, "features": self.server.features()})
+        if path in _STATIC:
+            name, ctype = _STATIC[path]
+            return self._send(200, _static(name), ctype, csp=_APP_CSP)
         if path.startswith("/api/"):
             return self._error(405 if path in ("/api/v1/analyze", "/api/v1/iocs") else 404, "not found")
         return self._error(404, "not found")
@@ -221,8 +226,9 @@ class ForensicsHandler(BaseHTTPRequestHandler):
                 fmt = query.get("format") or fields.get("format") or "stix"
                 if fmt not in IOC_FORMATS:
                     raise HttpError(400, f"format must be one of {', '.join(IOC_FORMATS)}")
+            started = time.monotonic()
             try:
-                reports = analyze_bytes(label, data, self.server.options)
+                reports = self.server.analyze(label, data)
             except EvidenceError as exc:
                 raise HttpError(422, str(exc)) from None
             if not reports:
@@ -246,11 +252,22 @@ class ForensicsHandler(BaseHTTPRequestHandler):
             return self._send(200, to_jsonl(reports) + "\n", "application/x-ndjson; charset=utf-8")
         if fmt == "cef":
             return self._send(200, to_cef(reports) + "\n", "text/plain; charset=utf-8")
+        if fmt == "bundle":  # what the web UI uses: reports plus their indicators
+            items = []
+            for r in reports:
+                d = r.to_dict()
+                d["indicators"] = [vars(i) for i in extract_iocs(r)]
+                items.append(d)
+            return self._json(200, {"reports": items, "elapsed_ms": round((time.monotonic() - started) * 1000)})
         return self._json(200, reports[0].to_dict() if len(reports) == 1 else [r.to_dict() for r in reports])
 
 
-class ForensicsServer(HTTPServer):
-    """Single-threaded on purpose: analysis timeouts use SIGALRM, which only works in the main thread."""
+class ForensicsServer(ThreadingHTTPServer):
+    """Connections are handled in threads (browsers open several at once and keep idle ones open),
+    but analyses run one at a time on the thread that called serve(): the per-message timeout uses
+    SIGALRM, which only works in the main thread, and one analysis at a time bounds memory use."""
+
+    daemon_threads = True
 
     def __init__(self, address: tuple[str, int], options: AnalysisOptions | None = None, token: str | None = None,
                  max_upload: int = DEFAULT_MAX_UPLOAD, quiet: bool = False):
@@ -264,7 +281,52 @@ class ForensicsServer(HTTPServer):
         self.max_upload = max_upload
         self.quiet = quiet
         self.analyzed = 0
+        self._jobs: queue.Queue | None = None  # set while serve() runs the analysis loop
+        self._lock = threading.Lock()  # analyses never overlap, even without serve()
         if ":" in host:
             import socket
             self.address_family = socket.AF_INET6
         super().__init__((host.strip("[]"), address[1]), ForensicsHandler)
+
+    def features(self) -> dict:
+        o = self.options
+        return {"dns": o.resolver is not None, "enrichment": o.enricher is not None,
+                "yara": o.yara_rules is not None, "custom_rules": len(o.custom_rules or []),
+                "protected_domains": len(o.protected_domains or []), "timeout": o.timeout}
+
+    def analyze(self, label: str, data: bytes) -> list:
+        jobs = self._jobs
+        if jobs is None or threading.current_thread() is threading.main_thread():
+            with self._lock:
+                return analyze_bytes(label, data, self.options)
+        done = threading.Event()
+        box: dict = {}
+        jobs.put((label, data, box, done))
+        done.wait()
+        if "error" in box:
+            raise box["error"]
+        return box["reports"]
+
+    def serve(self) -> None:
+        """Serve until KeyboardInterrupt: HTTP in a background thread, analyses on this thread."""
+        self._jobs = queue.Queue()
+        http = threading.Thread(target=self.serve_forever, daemon=True)
+        http.start()
+        try:
+            while True:
+                try:
+                    label, data, box, done = self._jobs.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                try:
+                    with self._lock:
+                        box["reports"] = analyze_bytes(label, data, self.options)
+                except BaseException as exc:  # handed to the waiting request thread
+                    box["error"] = exc
+                    if isinstance(exc, KeyboardInterrupt):
+                        raise
+                finally:
+                    done.set()
+        finally:
+            self._jobs = None
+            self.shutdown()
